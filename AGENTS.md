@@ -43,3 +43,17 @@ shadcn is a starting point: generated code is ours to reshape to the Figma desig
 ## Deferred (not set up yet)
 
 Figma token sync and Code Connect, visual regression testing (Chromatic is the candidate), React Compiler, and per-component subpath exports.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `phhien203/hp-flashcard`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
