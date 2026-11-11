@@ -294,14 +294,10 @@ jobs:
             --jq '"# " + .title + "\n\n" + .body' > /tmp/spec.md
           cat /tmp/spec.md
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup pnpm, Node.js and dependencies
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        uses: ./.github/actions/setup
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
@@ -312,7 +308,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         # Reads only. The queue comes back as queue.json, shaped and validated
         # by .sandcastle/agent-workflows/implement-spec/decomposition-schema.ts.
-        run: npx tsx .sandcastle/agent-workflows/implement-spec/decompose.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/implement-spec/decompose.ts
 
       - name: Write the queue as issues
         env:
@@ -400,22 +396,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
+      - name: Setup pnpm, Node.js and dependencies
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        uses: ./.github/actions/setup
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Playwright Chromium
+        # `pnpm test` runs Vitest in browser mode, so the agent needs a browser.
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
-
-      - name: Migrate and seed the database
-        run: |
-          npm run db:migrate
-          npm run db:seed
 
       - name: Claim the ticket
         # Moving the label first is what stops a cron tick that lands during a
@@ -466,7 +457,7 @@ jobs:
           git checkout -b "$BRANCH"
           echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           # Same as agent-implement.yml: the agent commits through the repo's
-          # pre-commit hook, which `npm ci` installed. Fail if it did not.
+          # pre-commit hook, which `pnpm install` installed. Fail if it did not.
           if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
             echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
             exit 1
@@ -475,7 +466,7 @@ jobs:
       - name: Build the ticket
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: npx tsx .sandcastle/agent-workflows/implement-spec/build.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/implement-spec/build.ts
 
       - name: Check the agent committed
         # A run with no commit fails here, so the ticket is parked with

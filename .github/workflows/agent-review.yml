@@ -151,24 +151,17 @@ jobs:
           fi
           cat /tmp/review-spec.md
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
+      - name: Setup pnpm, Node.js and dependencies
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        uses: ./.github/actions/setup
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Playwright Chromium
+        # `pnpm test` runs Vitest in browser mode, so the agent needs a browser.
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
-
-      - name: Migrate and seed the database
-        # The pre-commit hook runs on every commit the agent makes, and the
-        # repo's checks need a database.
-        run: |
-          npm run db:migrate
-          npm run db:seed
 
       - name: Open the branch
         run: |
@@ -176,7 +169,7 @@ jobs:
           git config user.name "agent-factory[bot]"
           git config user.email "agent-factory[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          # `npm ci` ran husky, which points git at .husky/_. If it did not,
+          # `pnpm install` ran husky, which points git at .husky/_. If it did not,
           # the agent's commits would skip the hook without anyone noticing.
           if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
             echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
@@ -187,7 +180,7 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: npx tsx .sandcastle/agent-workflows/review/review.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/review/review.ts
 
       - name: Push the review's fixes
         id: push

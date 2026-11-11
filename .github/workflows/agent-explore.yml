@@ -147,16 +147,11 @@ jobs:
             gh issue edit "$n" --add-label "agent:in-progress"
           done
 
-      - name: Setup Node.js 22
+      - name: Setup pnpm, Node.js and dependencies
         if: steps.batch.outputs.numbers != '[]'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install dependencies
-        if: steps.batch.outputs.numbers != '[]'
-        run: npm ci
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        uses: ./.github/actions/setup
 
       - name: Install Claude Code
         if: steps.batch.outputs.numbers != '[]'
@@ -169,7 +164,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         # The plan comes back as plan.json, shaped and validated by
         # .sandcastle/agent-workflows/explore/plan-schema.ts.
-        run: npx tsx .sandcastle/agent-workflows/explore/explore.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/explore/explore.ts
 
       - name: Hand the plan to the apply job
         id: plan

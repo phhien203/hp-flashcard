@@ -55,8 +55,8 @@ name: Agent — Implement A Ticket
 #
 # WHO COMMITS
 #   The agent does, and the repo's own pre-commit hook runs on every commit it
-#   makes — `npm ci` installs it, through husky's `prepare` script, exactly as
-#   it does on your machine. When the hook rejects a commit, the agent reads
+#   makes — `pnpm install` installs it, through husky's `prepare` script,
+#   exactly as it does on your machine. When the hook rejects a commit, the agent reads
 #   the failure, fixes its work and commits again. The hook is code from the
 #   repo, so it runs only where there is no token: every git command that
 #   holds one switches hooks off with `core.hooksPath=/dev/null`.
@@ -120,25 +120,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
+      - name: Setup pnpm, Node.js and dependencies
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        uses: ./.github/actions/setup
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Playwright Chromium
+        # `pnpm test` runs Vitest in browser mode, so the agent needs a browser.
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
-
-      - name: Migrate and seed the database
-        # The agent gets a real database, because half of this repo's checks
-        # need one. It is disposable: a fresh one, migrated and seeded, on
-        # every run.
-        run: |
-          npm run db:migrate
-          npm run db:seed
 
       - name: Open the branch
         id: branch
@@ -149,7 +141,7 @@ jobs:
           git checkout -b "$BRANCH"
           # Where the agent starts. Anything after this is a commit it made.
           echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          # `npm ci` ran husky, which points git at .husky/_. If it did not,
+          # `pnpm install` ran husky, which points git at .husky/_. If it did not,
           # the agent's commits would skip the hook without anyone noticing.
           if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
             echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
@@ -185,7 +177,7 @@ jobs:
       - name: Build the ticket
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/implement/implement.ts
 
       - name: Check the agent committed
         # The agent owns the commits now, so this step owns the question of

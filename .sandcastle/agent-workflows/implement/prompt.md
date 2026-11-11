@@ -6,15 +6,18 @@ open any code. Build the ticket, and only the ticket.
 
 Read CODING_STANDARDS.md.
 
-- Behaviour goes in a deep module under app/modules/, behind an entry point a
-  test can call, never inline in a loader.
+- Follow CLAUDE.md: the `packages/ui` source rules, and for a new component
+  its export from `src/index.ts` plus a colocated story and test.
 - Ship tests with the code. End with more passing tests than you started
   with, and none failing.
-- `npm run build` must pass too.
+- Before you stop, the repo must be green:
+  `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`. A change to
+  the exports, build or dependencies of `packages/ui` also needs
+  `pnpm build && pnpm check:package`.
+- A change to `@hp-flashcard/ui` needs a changeset (`pnpm changeset`).
 - Commit with `git commit` on the current branch. When the pre-commit hook
   rejects a commit, fix the work and commit again. The hook stays as it is:
-  no `--no-verify`, no edits to `.husky/`, `scripts/pre-commit.sh` or
-  `core.hooksPath`.
+  no `--no-verify`, no edits to `.husky/` or `core.hooksPath`.
 - Finish with at least one commit and a clean working tree. The workflow
   pushes and opens the pull request.
 - Leave `.github/` untouched.
