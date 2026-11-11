@@ -32,7 +32,7 @@ shadcn is a starting point: generated code is ours to reshape to the Figma desig
 
 - `apps/storybook` resolves `@hp-flashcard/ui` to **source** through the `@hp-flashcard/source` export condition (Vite `resolve.conditions` plus TS `customConditions`), so no build is needed during development. Tailwind's CSS `@import` ignores that condition, which is why `.storybook/preview.css` imports `theme.css` by relative path.
 - Stories are colocated with their components in `packages/ui/src` and are excluded from the build and from `styles.css`. Write CSF3 with `play` functions for behaviour.
-- Every story is also a Vitest test, and axe a11y violations **fail** it (`a11y.test: "error"`). Fix the component or token. Use a per-story `parameters.a11y` override only with a comment explaining why.
+- Every story is also a Vitest test, run twice: once in light and once with `.dark` on the preview root (one Vitest project per theme, via the `theme` global). Axe a11y violations in either theme **fail** it (`a11y.test: "error"`). Fix the component or token. Use a per-story `parameters.a11y` override only with a comment explaining why.
 - Vitest runs in browser mode (Playwright). `VITEST_BROWSERS` picks the browsers (`chromium` by default). CI runs Chromium, Firefox, and WebKit, so avoid engine-specific APIs and selectors.
 
 ## Changes and releases
