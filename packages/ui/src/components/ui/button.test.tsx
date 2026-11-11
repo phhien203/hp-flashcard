@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 
-import { Button } from './button.js'
+// Import from the public barrel so a missing export fails the test.
+import { Button } from '../../index.js'
 
 describe('Button', () => {
   it('renders an accessible button with its label', async () => {
