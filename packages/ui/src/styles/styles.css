@@ -1,0 +1,11 @@
+/*
+ * Entry for the precompiled `@hp-flashcard/ui/styles.css` (built with the
+ * Tailwind CLI). It contains the theme plus every utility the components use,
+ * so apps that don't run Tailwind can use the design system:
+ *   import "@hp-flashcard/ui/styles.css";
+ *
+ * source(none) turns off auto-detection; theme.css declares exactly which
+ * files are scanned.
+ */
+@import 'tailwindcss' source(none);
+@import './theme.css';

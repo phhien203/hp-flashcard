@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+dist/
+storybook-static/
+coverage/
+.changeset/*.md
+!.changeset/README.md
+**/CHANGELOG.md

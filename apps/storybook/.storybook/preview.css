@@ -1,0 +1,8 @@
+/*
+ * Storybook consumes the design system the way a Tailwind v4 app would
+ * (`@import "@hp-flashcard/ui/theme.css"`), but points at the source file:
+ * Tailwind resolves CSS imports itself and ignores Vite's custom
+ * "@hp-flashcard/source" condition, and dist/ may not exist in dev.
+ */
+@import 'tailwindcss';
+@import '../../../packages/ui/src/styles/theme.css';

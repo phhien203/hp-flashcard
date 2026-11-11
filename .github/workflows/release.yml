@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version PR / publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push version commits and tags, create GitHub releases
+      pull-requests: write # open the "Version Packages" PR
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      # With pending changesets: opens/updates the "Version Packages" PR.
+      # When that PR is merged: builds and publishes to npm via OIDC (no NPM_TOKEN).
+      - uses: changesets/action@v2
+        with:
+          publish-script: pnpm release
+          pr-title: 'chore: version packages'
+          commit-message: 'chore: version packages'

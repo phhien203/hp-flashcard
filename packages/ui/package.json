@@ -1,0 +1,76 @@
+{
+  "name": "@hp-flashcard/ui",
+  "version": "0.0.0",
+  "description": "The hp-flashcard design system: React 19 components built on Base UI and Tailwind CSS v4.",
+  "keywords": [
+    "design-system",
+    "react",
+    "tailwindcss",
+    "base-ui",
+    "shadcn"
+  ],
+  "license": "MIT",
+  "author": "Hien Pham",
+  "homepage": "https://github.com/phhien203/hp-flashcard#readme",
+  "bugs": "https://github.com/phhien203/hp-flashcard/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phhien203/hp-flashcard.git",
+    "directory": "packages/ui"
+  },
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "@hp-flashcard/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./theme.css": "./dist/styles/theme.css",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json && pnpm build:css",
+    "build:css": "tailwindcss -i src/styles/styles.css -o dist/styles.css --minify && mkdir -p dist/styles && cp src/styles/theme.css dist/styles/theme.css",
+    "check:package": "publint --strict && attw --pack . --profile esm-only --exclude-entrypoints ./styles.css ./theme.css",
+    "typecheck": "tsc --noEmit",
+    "shadcn": "shadcn"
+  },
+  "dependencies": {
+    "@base-ui/react": "catalog:",
+    "class-variance-authority": "catalog:",
+    "cn": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "catalog:",
+    "@storybook/react-vite": "catalog:",
+    "@tailwindcss/cli": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "publint": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "shadcn": "catalog:",
+    "storybook": "catalog:",
+    "tailwindcss": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vitest-browser-react": "catalog:"
+  }
+}

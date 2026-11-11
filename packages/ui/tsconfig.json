@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    // Only here so the shadcn CLI can resolve components.json aliases.
+    // Source code must use relative imports (enforced by ESLint): tsc does
+    // not rewrite aliases in emitted .d.ts files.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
