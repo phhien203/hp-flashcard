@@ -149,6 +149,17 @@ describe('Button', () => {
     ).toBe(fill)
   })
 
+  it.each(['primary', 'secondary', 'outline'] as const)(
+    'sets the %s label in the semibold 16px text preset',
+    async (variant) => {
+      const screen = await render(<Button variant={variant}>Save</Button>)
+
+      const style = getComputedStyle(screen.getByRole('button').element())
+      expect(style.fontSize).toBe('16px')
+      expect(style.fontWeight).toBe('600')
+    },
+  )
+
   it.each([
     ['default', '48px', 'auto'],
     ['icon', '48px', '48px'],
