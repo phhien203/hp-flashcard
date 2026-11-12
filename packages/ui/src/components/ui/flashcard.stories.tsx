@@ -77,6 +77,18 @@ export const LongQuestion: Story = {
     answer: 'The Seine',
     progress: 4,
   },
+  play: async ({ args, canvas }) => {
+    const question = canvas.getByText(String(args.question))
+    await expect(question).toBeVisible()
+
+    // The card grows with the question, so the flip button still covers it.
+    const text = question.getBoundingClientRect()
+    const button = canvas
+      .getByRole('button', { name: 'Show answer' })
+      .getBoundingClientRect()
+    await expect(text.top).toBeGreaterThanOrEqual(button.top)
+    await expect(text.bottom).toBeLessThanOrEqual(button.bottom)
+  },
 }
 
 /** A click turns the card over to the answer, and back. */
