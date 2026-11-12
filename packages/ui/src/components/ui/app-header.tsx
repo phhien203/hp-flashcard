@@ -5,7 +5,7 @@ import { cn } from '../../lib/utils.js'
 
 interface AppHeaderProps extends Omit<ComponentProps<'header'>, 'children'> {
   /** The header's navigation, laid out at the end: usually a `SegmentedNav`. */
-  nav?: ReactNode
+  nav: ReactNode
   /**
    * Makes the logo a link to this URL, such as the home page. The link is
    * named "Flashcard" at every width.
