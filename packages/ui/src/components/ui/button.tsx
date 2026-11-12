@@ -1,6 +1,6 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { cva, type VariantProps } from 'class-variance-authority'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 import { cn } from '../../lib/utils.js'
 
@@ -55,6 +55,32 @@ type ButtonIconProps = {
 
 type ButtonProps = ButtonBaseProps & (ButtonTextProps | ButtonIconProps)
 
+// Module-scoped, so it does not clash with @types/node. Like React, this relies
+// on the bundler replacing the literal `process.env.NODE_ENV` (Vite's library
+// build leaves it for the consumer), which drops the warning from production.
+declare const process: { env: { NODE_ENV?: string } }
+
+const isBlank = (value: string | undefined) => !value?.trim()
+
+/**
+ * The types require a name for `size="icon"` but accept an empty string, so
+ * warn in development when the icon-only button is left without one.
+ */
+function useIconNameWarning(
+  size: ButtonProps['size'],
+  label: string | undefined,
+  labelledBy: string | undefined,
+) {
+  const unnamed = size === 'icon' && isBlank(label) && isBlank(labelledBy)
+  useEffect(() => {
+    if (unnamed && process.env.NODE_ENV !== 'production') {
+      console.warn(
+        'Button: size="icon" has no visible label, so it needs a non-blank `aria-label` or `aria-labelledby`.',
+      )
+    }
+  }, [unnamed])
+}
+
 function Button({
   className,
   variant = 'primary',
@@ -64,6 +90,8 @@ function Button({
   children,
   ...props
 }: ButtonProps) {
+  useIconNameWarning(size, props['aria-label'], props['aria-labelledby'])
+
   return (
     <ButtonPrimitive
       data-slot="button"
