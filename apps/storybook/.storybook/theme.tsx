@@ -7,9 +7,11 @@ import type { Decorator } from '@storybook/react-vite'
 import { GLOBALS_UPDATED } from 'storybook/internal/core-events'
 import { themes } from 'storybook/theming'
 
-import type { Theme } from './themes.ts'
+import { THEMES, type Theme } from './themes.ts'
 
-const toTheme = (value: unknown): Theme => (value === 'dark' ? 'dark' : 'light')
+/** Narrows a raw `theme` global to a known theme, defaulting to the first. */
+const toTheme = (value: unknown): Theme =>
+  THEMES.find((theme) => theme === value) ?? THEMES[0]
 
 /**
  * The design system's dark tokens live under `.dark`. Put it on the preview
