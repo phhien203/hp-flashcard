@@ -29,7 +29,7 @@ interface CategoryFilterProps {
   className?: string
 }
 
-const NO_CATEGORIES: readonly string[] = []
+const NO_SELECTION: readonly string[] = []
 
 /**
  * The "All Categories" dropdown: an outline button that opens a menu with a
@@ -42,7 +42,7 @@ const NO_CATEGORIES: readonly string[] = []
 function CategoryFilter({
   categories,
   value,
-  defaultValue = NO_CATEGORIES,
+  defaultValue = NO_SELECTION,
   onValueChange,
   className,
 }: CategoryFilterProps) {
@@ -50,9 +50,8 @@ function CategoryFilter({
   const selected = value ?? uncontrolled
 
   const toggle = (name: string, checked: boolean) => {
-    const next = checked
-      ? [...selected.filter((n) => n !== name), name]
-      : selected.filter((n) => n !== name)
+    const others = selected.filter((n) => n !== name)
+    const next = checked ? [...others, name] : others
     if (value === undefined) setUncontrolled(next)
     onValueChange?.(next)
   }
