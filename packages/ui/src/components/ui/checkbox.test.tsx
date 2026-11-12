@@ -105,12 +105,14 @@ describe('Checkbox', () => {
   it('shows the hard shadow on hover', async () => {
     const screen = await render(<Labelled />)
     const checkbox = screen.getByRole('checkbox')
+    const shadow = () => getComputedStyle(checkbox.element()).boxShadow
 
-    await expect.element(checkbox).toHaveStyle({ boxShadow: 'none' })
+    // Earlier tests click the checkbox, and the next one renders in the same
+    // spot, so the pointer can start over it. Rest it on the label text first.
+    await screen.getByText('Hide Mastered').hover()
+    await expect.poll(shadow).toBe('none')
     await checkbox.hover()
-    await expect
-      .poll(() => getComputedStyle(checkbox.element()).boxShadow)
-      .toMatch(/2px 2px 0px 0px/)
+    await expect.poll(shadow).toMatch(/2px 2px 0px 0px/)
     await userEvent.unhover(checkbox)
   })
 
