@@ -51,6 +51,7 @@ export {
   type FieldLabelProps,
   type FieldProps,
 } from './components/ui/field.js'
+export { Flashcard, type FlashcardProps } from './components/ui/flashcard.js'
 export { Input, type InputProps } from './components/ui/input.js'
 export {
   Menu,
