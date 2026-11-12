@@ -103,19 +103,10 @@ describe('Checkbox', () => {
   })
 
   it('shows the hard shadow on hover', async () => {
-    const screen = await render(
-      <>
-        <Labelled />
-        <p>Elsewhere</p>
-      </>,
-    )
+    const screen = await render(<Labelled />)
     const checkbox = screen.getByRole('checkbox')
     const shadow = () => getComputedStyle(checkbox.element()).boxShadow
 
-    // Earlier tests click the checkbox, and the next one renders in the same
-    // spot, so the pointer can start over it. Move it outside the label:
-    // hovering a label also hovers its control in Chromium and Firefox.
-    await screen.getByText('Elsewhere').hover()
     await expect.poll(shadow).toBe('none')
     await checkbox.hover()
     await expect.poll(shadow).toMatch(/2px 2px 0px 0px/)

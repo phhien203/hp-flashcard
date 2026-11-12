@@ -30,8 +30,6 @@ describe('theme tokens', () => {
   it('maps the roles to Figma colors in light', async () => {
     const screen = await render(<Button>Save</Button>)
     const button = screen.getByRole('button')
-    // An earlier test file may have left the pointer where the button renders.
-    await userEvent.unhover(button)
 
     expect(background(document.body)).toBe('rgb(247, 243, 240)') // neutral-100
     expect(await settled(button.element(), 'backgroundColor')).toBe(
