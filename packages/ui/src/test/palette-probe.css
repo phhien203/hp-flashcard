@@ -1,0 +1,7 @@
+/*
+ * Compiled by theme.test.tsx to prove what the theme can and cannot produce.
+ * Asks Tailwind for one default-palette class and one Figma class.
+ */
+@import 'tailwindcss' source(none);
+@import '../styles/theme.css';
+@source inline('bg-red-500 text-slate-900 shadow-lg bg-yellow-500');

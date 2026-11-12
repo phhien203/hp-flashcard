@@ -1,9 +1,6 @@
 /*
  * @hp-flashcard/ui design tokens (Tailwind CSS v4).
  *
- * PLACEHOLDER: shadcn "base-nova" defaults. These get replaced by tokens
- * pulled from the Figma file in the next phase.
- *
  * Shipped as `@hp-flashcard/ui/theme.css` for consumers that run Tailwind v4:
  *   @import "tailwindcss";
  *   @import "@hp-flashcard/ui/theme.css";
@@ -16,122 +13,137 @@
 @source not '../**/*.stories.tsx';
 @source not '../**/*.test.tsx';
 
+/*
+ * Every color and shadow token utility is always generated, even when no
+ * component uses it yet, so the precompiled styles.css offers the full
+ * palette and the Foundations stories can show it. Each line stays
+ * unwrapped: prettier-plugin-tailwindcss can't parse a wrapped @source.
+ */
+/* prettier-ignore */
+@source inline('{bg,text,border}-{neutral-{950,900,600,300,100,0},yellow-500,blue-{400,600},teal-400,pink-{400,500,700}}');
+/* prettier-ignore */
+@source inline('{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,destructive,border,input,ring}');
+/* prettier-ignore */
+@source inline('{,hover:}shadow-{rest,hover} focus-visible:shadow-ring focus-visible:border-ring');
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
+  /* Only Figma colors exist: Tailwind's default palette is cleared. */
+  --color-*: initial;
+
+  /* Primitives, named as in Figma. */
+  --color-neutral-950: var(--neutral-950);
+  --color-neutral-900: var(--neutral-900);
+  --color-neutral-600: var(--neutral-600);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-0: var(--neutral-0);
+  --color-yellow-500: var(--yellow-500);
+  --color-blue-400: var(--blue-400);
+  --color-blue-600: var(--blue-600);
+  --color-teal-400: var(--teal-400);
+  --color-pink-400: var(--pink-400);
+  --color-pink-500: var(--pink-500);
+  --color-pink-700: var(--pink-700);
+
+  /* Semantic roles (shadcn names). Components use these. */
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /*
+   * Hard (blur-free) offset shadows in --shadow-color. On keyboard focus,
+   * add `focus-visible:shadow-ring` (and `focus-visible:border-ring`) to
+   * switch them to the ring color.
+   */
+  --shadow-*: initial;
+  --shadow-rest: 2px 2px 0 0 var(--shadow-color);
+  --shadow-hover: 4px 4px 0 0 var(--shadow-color);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  /* red-700: shadcn's default red-600 fails WCAG AA (4:1) on the destructive button. */
-  --destructive: oklch(0.505 0.213 27.518);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /*
+   * Roles reference primitives directly, never other roles: a custom
+   * property resolves var() where it is declared, so an alias set on :root
+   * would ignore a nested `.dark`.
+   */
+
+  /* Figma palette. neutral-950 and neutral-300 serve the dark theme. */
+  --neutral-950: #1f0d01;
+  --neutral-900: #2e1401;
+  --neutral-600: #6d5b4d;
+  --neutral-300: #c4b5a8;
+  --neutral-100: #f7f3f0;
+  --neutral-0: #ffffff;
+  --yellow-500: #f8cb46;
+  --blue-400: #92adeb;
+  --blue-600: #5072c7;
+  --teal-400: #47d9c9;
+  --pink-400: #fc8ae5;
+  --pink-500: #f073a3;
+  --pink-700: #e11966;
+
+  --background: var(--neutral-100);
+  --foreground: var(--neutral-900);
+  --card: var(--neutral-0);
+  --card-foreground: var(--neutral-900);
+  --popover: var(--neutral-0);
+  --popover-foreground: var(--neutral-900);
+  --primary: var(--yellow-500);
+  --primary-foreground: var(--neutral-900);
+  --secondary: var(--neutral-0);
+  --secondary-foreground: var(--neutral-900);
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--neutral-600);
+  --accent: var(--neutral-100);
+  --accent-foreground: var(--neutral-900);
+  /* 4.63:1 on white but 4.2:1 on neutral-100: use it on white surfaces only. */
+  --destructive: var(--pink-700);
+  --border: var(--neutral-900);
+  --input: var(--neutral-900);
+  --ring: var(--blue-600);
+  --shadow-color: var(--neutral-900);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: var(--neutral-950);
+  --foreground: var(--neutral-100);
+  --card: var(--neutral-900);
+  --card-foreground: var(--neutral-100);
+  --popover: var(--neutral-900);
+  --popover-foreground: var(--neutral-100);
+  --secondary: var(--neutral-900);
+  --secondary-foreground: var(--neutral-100);
+  --muted: var(--neutral-900);
+  --muted-foreground: var(--neutral-300);
+  --accent: var(--neutral-900);
+  --accent-foreground: var(--neutral-100);
+  --destructive: var(--pink-500);
+  --border: var(--neutral-100);
+  --input: var(--neutral-100);
+  --ring: var(--blue-400);
+  --shadow-color: var(--neutral-100);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground;
