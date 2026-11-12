@@ -11,6 +11,7 @@ name: Agent — Implement A Ticket
 #   verification checks, and opens a DRAFT pull request with whatever the
 #   agent committed. Draft, always: the human checkpoint we removed from the
 #   *build* has not been removed from the *merge*.
+#   It then labels the PR `agent:review`, which hands it to agent-review.yml.
 #
 #   Every run pushes to a branch of its own, `agent/issue-<n>-<run id>`. A
 #   retry never pushes onto the branch an earlier run left behind, so nothing
@@ -249,6 +250,23 @@ jobs:
             --body-file "$body_file" \
             "${attach[@]}")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Hand the pull request to the reviewer
+        env:
+          # agent-review.yml triggers on `pull_request: [labeled]`, and a label
+          # applied with the built-in GITHUB_TOKEN fires no workflow — GitHub
+          # suppresses that so a workflow cannot trigger itself. With
+          # GITHUB_TOKEN the label lands and the reviewer never wakes, so this
+          # needs the PAT.
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          gh label create "agent:review" --color 5319E7 \
+            --description "Ask the review workflow to read this pull request" || true
+
+          # No `|| true`: if this fails the chain stopped at its last hop, and
+          # a red run says so where a green one would hide it.
+          gh pr edit "$BRANCH" --add-label "agent:review"
 
       - name: Mark blocked on failure
         if: failure()
