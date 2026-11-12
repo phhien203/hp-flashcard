@@ -1,7 +1,7 @@
 import { createIcon } from './create-icon.js'
 
 /**
- * A cross, used by the Toast's close button.
+ * A cross, used by the Dialog and Toast close buttons.
  *
  * Drawn by hand on the 16px grid, not exported from Figma: the Figma file
  * was not reachable when it was added. Replace the path with the Figma

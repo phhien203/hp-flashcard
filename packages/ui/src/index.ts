@@ -1,10 +1,48 @@
 export { Badge, type BadgeProps } from './components/ui/badge.js'
 export {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  type AlertDialogActionProps,
+  type AlertDialogCancelProps,
+  type AlertDialogContentProps,
+  type AlertDialogDescriptionProps,
+  type AlertDialogFooterProps,
+  type AlertDialogHeaderProps,
+  type AlertDialogProps,
+  type AlertDialogTitleProps,
+  type AlertDialogTriggerProps,
+} from './components/ui/alert-dialog.js'
+export {
   Button,
   buttonVariants,
   type ButtonProps,
 } from './components/ui/button.js'
 export { Checkbox, type CheckboxProps } from './components/ui/checkbox.js'
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  type DialogCloseProps,
+  type DialogContentProps,
+  type DialogDescriptionProps,
+  type DialogFooterProps,
+  type DialogHeaderProps,
+  type DialogProps,
+  type DialogTitleProps,
+  type DialogTriggerProps,
+} from './components/ui/dialog.js'
 export {
   Field,
   FieldError,
