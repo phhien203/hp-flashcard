@@ -4,9 +4,14 @@ import { cn } from '../../lib/utils.js'
 
 type ProgressBaseProps = Omit<
   ProgressPrimitive.Root.Props,
-  'value' | 'min' | 'max' | 'children'
+  // format and locale are left out: the count and value text show plain
+  // integers, so they would have no effect.
+  'value' | 'min' | 'max' | 'children' | 'format' | 'locale'
 > & {
-  /** How far along, from 0 to `max`. Values outside that range are clamped. */
+  /**
+   * How far along, from 0 to `max`. Values outside that range are clamped,
+   * and a non-finite value counts as 0.
+   */
   value: number
   /**
    * The value that fills the bar.
@@ -40,11 +45,11 @@ function Progress({
   className,
   ...props
 }: ProgressProps) {
-  const clamped = Math.min(Math.max(value, 0), max)
+  const clamped = Number.isFinite(value) ? Math.min(Math.max(value, 0), max) : 0
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
-      value={value}
+      value={clamped}
       min={0}
       max={max}
       getAriaValueText={
