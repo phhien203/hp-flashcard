@@ -35,6 +35,7 @@
     "@vitest/browser-playwright": "catalog:",
     "eslint": "catalog:",
     "eslint-config-prettier": "catalog:",
+    "eslint-plugin-better-tailwindcss": "catalog:",
     "eslint-plugin-react-hooks": "catalog:",
     "eslint-plugin-storybook": "catalog:",
     "globals": "catalog:",
