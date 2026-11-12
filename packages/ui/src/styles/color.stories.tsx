@@ -139,7 +139,7 @@ const hexOf = (name: Primitive) =>
   PRIMITIVES.find((primitive) => primitive.name === name)!.hex
 
 /** `#RRGGBB` as the `rgb(r, g, b)` string getComputedStyle returns. */
-const toRgb = (hex: string) => {
+const hexToRgbString = (hex: string) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
   return `rgb(${r}, ${g}, ${b})`
 }
@@ -228,11 +228,11 @@ export const Palette: Story = {
       getComputedStyle(canvas.getByTestId(label)).backgroundColor
 
     for (const { name, hex } of PRIMITIVES) {
-      await expect(background(name)).toBe(toRgb(hex))
+      await expect(background(name)).toBe(hexToRgbString(hex))
     }
     for (const role of ROLES) {
       await expect(background(role.name)).toBe(
-        toRgb(hexOf(dark ? role.dark : role.light)),
+        hexToRgbString(hexOf(dark ? role.dark : role.light)),
       )
     }
   },

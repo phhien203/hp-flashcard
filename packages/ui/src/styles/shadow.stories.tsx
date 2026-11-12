@@ -16,7 +16,7 @@ const box = {
 } as const
 
 /** Any CSS color (rgb, oklab, hex…) as [r, g, b], via a canvas. */
-const toRgb = (color: string) => {
+const toChannels = (color: string) => {
   const context = document.createElement('canvas').getContext('2d')!
   context.fillStyle = color
   context.fillRect(0, 0, 1, 1)
@@ -30,12 +30,12 @@ const tokenShadow = (element: HTMLElement) => {
   )!
   const layer = layers.at(-1)!.trim()
   const color = layer.match(/^[a-z]+\([^)]*\)/)![0]
-  return { color: toRgb(color), offsets: layer.slice(color.length).trim() }
+  return { color: toChannels(color), offsets: layer.slice(color.length).trim() }
 }
 
 /** The value a theme token resolves to on the preview root, as [r, g, b]. */
 const token = (name: string) =>
-  toRgb(getComputedStyle(document.documentElement).getPropertyValue(name))
+  toChannels(getComputedStyle(document.documentElement).getPropertyValue(name))
 
 /** Colors match within rounding (oklab round trips can be off by one). */
 const expectColor = async (actual: number[], expected: number[]) => {
@@ -101,7 +101,10 @@ export const Shadows: Story = {
         await userEvent.tab()
         await expect(sample).toHaveFocus()
         await expectColor(tokenShadow(sample).color, ring)
-        await expectColor(toRgb(getComputedStyle(sample).borderTopColor), ring)
+        await expectColor(
+          toChannels(getComputedStyle(sample).borderTopColor),
+          ring,
+        )
       },
     )
   },
