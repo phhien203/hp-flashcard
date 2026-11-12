@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { cn } from '../index.js'
+import theme from '../styles/theme.css?raw'
+
+// Every token theme.css defines in a namespace, e.g. radius -> ['0', '4', …].
+function themeTokens(namespace: string) {
+  const pattern = new RegExp(String.raw`--${namespace}-([\w-]+):`, 'g')
+  return [...theme.matchAll(pattern)].map(([, name]) => name)
+}
 
 describe('cn', () => {
   it('joins conditional class names', () => {
@@ -19,5 +26,21 @@ describe('cn', () => {
     [['w-dialog', 'w-full'], 'w-full'],
   ])('lets the later design-system token win: %j', (classes, expected) => {
     expect(cn(...classes)).toBe(expected)
+  })
+
+  // cn's config in utils.ts lists the radius and container names by hand.
+  // A token added to theme.css but not there would not override its peers.
+  it.each([
+    ['radius', 'rounded'],
+    ['container', 'max-w'],
+  ])('knows every %s token in theme.css', (namespace, utility) => {
+    const tokens = themeTokens(namespace)
+    expect(tokens.length).toBeGreaterThan(1)
+    for (const token of tokens) {
+      const other = tokens.find((t) => t !== token)
+      const earlier = `${utility}-${other}`
+      const later = `${utility}-${token}`
+      expect(cn(earlier, later)).toBe(later)
+    }
   })
 })
