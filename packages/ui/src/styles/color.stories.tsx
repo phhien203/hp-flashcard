@@ -115,6 +115,18 @@ const ROLES: {
     dark: 'neutral-100',
   },
   {
+    name: 'mastered',
+    className: 'bg-mastered',
+    light: 'teal-400',
+    dark: 'teal-400',
+  },
+  {
+    name: 'mastered-foreground',
+    className: 'bg-mastered-foreground',
+    light: 'neutral-900',
+    dark: 'neutral-900',
+  },
+  {
     name: 'destructive',
     className: 'bg-destructive',
     light: 'pink-700',
