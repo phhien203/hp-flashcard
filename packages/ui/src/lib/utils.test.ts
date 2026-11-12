@@ -43,4 +43,21 @@ describe('cn', () => {
       expect(cn(earlier, later)).toBe(later)
     }
   })
+
+  // The typography presets are @utility blocks, not theme variables, so cn
+  // only knows them from the list in utils.ts. Unknown, they read as text
+  // colors, and a component's color class would silently drop its preset.
+  it('knows every text-preset utility in theme.css', () => {
+    const presets = [...theme.matchAll(/@utility (text-preset-[\w-]+)/g)].map(
+      ([, name]) => name,
+    )
+    expect(presets.length).toBeGreaterThan(1)
+    for (const preset of presets) {
+      expect(cn(preset, 'text-primary-foreground')).toBe(
+        `${preset} text-primary-foreground`,
+      )
+      const other = presets.find((p) => p !== preset)
+      expect(cn(other, preset)).toBe(preset)
+    }
+  })
 })
