@@ -28,17 +28,48 @@ interface FlashcardProps extends Omit<ComponentProps<'div'>, 'children'> {
   onFlippedChange?: (flipped: boolean) => void
 }
 
-// Keyboard focus on the flip button shows on the visible face, in the ring color.
-const faceClassName =
-  'relative col-start-1 row-start-1 flex flex-col items-center justify-between gap-300 overflow-hidden rounded-24 border border-border p-300 text-center text-flashcard-foreground shadow-hover transition-shadow backface-hidden group-has-focus-visible:border-ring group-has-focus-visible:shadow-ring md:p-400'
+interface FlashcardFaceProps {
+  side: 'front' | 'back'
+  /** Turned away from the viewer, so hidden from assistive technology. */
+  hidden: boolean
+  category: ReactNode
+  progress: number
+  children: ReactNode
+}
 
-function FlashcardFooter({ progress }: { progress: number }) {
+/** One side of the card: the decor, the category, its content and the progress. */
+function FlashcardFace({
+  side,
+  hidden,
+  category,
+  progress,
+  children,
+}: FlashcardFaceProps) {
   return (
-    <div className="relative flex items-center gap-100">
-      <Progress value={progress} max={MAX_PROGRESS} aria-label="Progress" />
-      <span className="text-preset-6 tabular-nums">
-        {progress}/{MAX_PROGRESS}
-      </span>
+    <div
+      data-slot={`flashcard-${side}`}
+      aria-hidden={hidden || undefined}
+      className={cn(
+        // The flip button is a transparent overlay with no outline of its
+        // own, so its keyboard focus shows on the face, in the ring color.
+        'relative col-start-1 row-start-1 flex flex-col items-center justify-between gap-300 overflow-hidden rounded-24 border border-border p-300 text-center text-flashcard-foreground shadow-hover transition-shadow backface-hidden group-has-focus-visible:border-ring group-has-focus-visible:shadow-ring motion-reduce:transition-none md:p-400',
+        side === 'front'
+          ? 'bg-flashcard-question'
+          : 'rotate-y-180 bg-flashcard-answer',
+      )}
+    >
+      <FlashcardPattern />
+      <FlashcardSparkles />
+      <Badge className="relative">{category}</Badge>
+      <div className="relative flex flex-col items-center gap-200 py-1000 md:py-1400">
+        {children}
+      </div>
+      <div className="relative flex items-center gap-100">
+        <Progress value={progress} max={MAX_PROGRESS} aria-label="Progress" />
+        <span className="text-preset-6 tabular-nums">
+          {progress}/{MAX_PROGRESS}
+        </span>
+      </div>
     </div>
   )
 }
@@ -89,41 +120,31 @@ function Flashcard({
           flipped && 'rotate-y-180',
         )}
       >
-        <div
-          data-slot="flashcard-front"
-          aria-hidden={flipped || undefined}
-          className={cn(faceClassName, 'bg-flashcard-question')}
+        <FlashcardFace
+          side="front"
+          hidden={flipped}
+          category={category}
+          progress={count}
         >
-          <FlashcardPattern />
-          <FlashcardSparkles />
-          <Badge className="relative">{category}</Badge>
-          <div className="relative flex flex-col items-center gap-200 py-1000 md:py-1400">
-            <p className="text-preset-1">{question}</p>
-            {/* The flip button's name already says this. */}
-            <p aria-hidden="true" className="text-preset-4-medium">
-              Click to reveal answer
-            </p>
-          </div>
-          <FlashcardFooter progress={count} />
-        </div>
-        <div
-          data-slot="flashcard-back"
-          aria-hidden={!flipped || undefined}
-          className={cn(faceClassName, 'rotate-y-180 bg-flashcard-answer')}
+          <p className="text-preset-1">{question}</p>
+          {/* The flip button's name already says this. */}
+          <p aria-hidden="true" className="text-preset-4-medium">
+            Click to reveal answer
+          </p>
+        </FlashcardFace>
+        <FlashcardFace
+          side="back"
+          hidden={!flipped}
+          category={category}
+          progress={count}
         >
-          <FlashcardPattern />
-          <FlashcardSparkles />
-          <Badge className="relative">{category}</Badge>
-          <div className="relative flex flex-col items-center gap-200 py-1000 md:py-1400">
-            {flipped ? (
-              <>
-                <p className="text-preset-4-medium">Answer:</p>
-                <p className="text-preset-1">{answer}</p>
-              </>
-            ) : null}
-          </div>
-          <FlashcardFooter progress={count} />
-        </div>
+          {flipped ? (
+            <>
+              <p className="text-preset-4-medium">Answer:</p>
+              <p className="text-preset-1">{answer}</p>
+            </>
+          ) : null}
+        </FlashcardFace>
       </div>
       <button
         type="button"
