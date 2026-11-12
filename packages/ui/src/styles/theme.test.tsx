@@ -8,7 +8,10 @@ import probe from '../test/palette-probe.css?inline'
 import { Button } from '../index.js'
 
 /** Reads a style once the Button's transitions have settled. */
-const settled = async (element: Element, property: 'borderTopColor') => {
+const settled = async (
+  element: Element,
+  property: 'borderTopColor' | 'backgroundColor',
+) => {
   await Promise.all(element.getAnimations().map(({ finished }) => finished))
   return getComputedStyle(element)[property]
 }
@@ -26,9 +29,12 @@ describe('theme tokens', () => {
 
   it('maps the roles to Figma colors in light', async () => {
     const screen = await render(<Button>Save</Button>)
+    const button = screen.getByRole('button')
+    // An earlier test file may have left the pointer where the button renders.
+    await userEvent.unhover(button)
 
     expect(background(document.body)).toBe('rgb(247, 243, 240)') // neutral-100
-    expect(background(screen.getByRole('button').element())).toBe(
+    expect(await settled(button.element(), 'backgroundColor')).toBe(
       'rgb(248, 203, 70)', // yellow-500
     )
   })
