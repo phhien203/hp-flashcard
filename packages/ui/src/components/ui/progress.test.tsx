@@ -52,6 +52,17 @@ describe('Progress', () => {
     await expect.element(screen.getByText('5/5')).toBeVisible()
   })
 
+  it('treats a non-finite value as 0', async () => {
+    const screen = await render(
+      <Progress aria-label="Mastery" value={Number.NaN} showCount />,
+    )
+
+    const bar = screen.getByRole('progressbar')
+    await expect.element(bar).toHaveAttribute('aria-valuenow', '0')
+    await expect.element(bar).toHaveAttribute('aria-valuetext', '0 of 5')
+    await expect.element(screen.getByText('0/5')).toBeVisible()
+  })
+
   it('can be named by a visible label', async () => {
     const screen = await render(
       <>
