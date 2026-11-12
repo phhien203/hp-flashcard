@@ -65,6 +65,10 @@ export const Secondary: Story = { args: { variant: 'secondary' } }
 
 export const Outline: Story = { args: { variant: 'outline' } }
 
+// No Hover story: Storybook's userEvent fires synthetic events, which never
+// apply CSS :hover. The shadow-rest to shadow-hover change is checked by the
+// "lifts its shadow" test in button.test.tsx instead (decided in PR #29).
+
 export const KeyboardFocus: Story = {
   play: async ({ canvas, userEvent }) => {
     const button = canvas.getByRole('button')
