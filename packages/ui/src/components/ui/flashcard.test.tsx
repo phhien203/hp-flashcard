@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
-import { userEvent } from 'vitest/browser'
+import { commands, userEvent } from 'vitest/browser'
 
 // Import from the public barrel so a missing export fails the test.
 import { Flashcard, type FlashcardProps } from '../../index.js'
+import '../../test/commands.js'
 import { settle } from '../../test/settle.js'
 
 const card = {
@@ -180,6 +181,19 @@ describe('Flashcard', () => {
     await screen.getByRole('button').click()
     await settle(inner(root))
     // rotateY(180deg) as a matrix: the x axis is mirrored.
+    expect(getComputedStyle(inner(root)).transform).toMatch(/^matrix3d\(-1,/)
+  })
+
+  it('turns over instantly under prefers-reduced-motion', async () => {
+    await commands.emulateReducedMotion('reduce')
+    onTestFinished(() => commands.emulateReducedMotion(null))
+    const screen = await renderCard()
+    const root = screen.container
+
+    await screen.getByRole('button').click()
+
+    // No settle(): with no transition, the turn is already at its end.
+    expect(inner(root).getAnimations()).toHaveLength(0)
     expect(getComputedStyle(inner(root)).transform).toMatch(/^matrix3d\(-1,/)
   })
 

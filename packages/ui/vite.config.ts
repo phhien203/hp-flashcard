@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import type { BrowserCommand } from 'vitest/node'
 import { defineConfig } from 'vitest/config'
 
 import { browserTestConfig } from '../../vitest.shared.ts'
@@ -10,6 +11,15 @@ const externals = [
   ...Object.keys(pkg.dependencies),
   ...Object.keys(pkg.peerDependencies),
 ]
+/**
+ * Emulates `prefers-reduced-motion` on the test page, through Playwright.
+ * Pass `null` to go back to the browser's own setting. Typed for tests in
+ * `src/test/commands.ts`.
+ */
+const emulateReducedMotion: BrowserCommand<
+  [reducedMotion: 'reduce' | 'no-preference' | null]
+> = ({ page }, reducedMotion) => page.emulateMedia({ reducedMotion })
+
 const isExternal = (id: string) =>
   externals.some((dep) => id === dep || id.startsWith(`${dep}/`))
 
@@ -38,6 +48,9 @@ export default defineConfig({
     name: 'unit',
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
     setupFiles: ['./src/test/setup.ts'],
-    browser: browserTestConfig(),
+    browser: {
+      ...browserTestConfig(),
+      commands: { emulateReducedMotion },
+    },
   },
 })
