@@ -21,10 +21,9 @@ const badgeVariants = cva(
   },
 )
 
-type BadgeProps = Omit<ComponentProps<'span'>, 'children'> &
+type BadgeProps = ComponentProps<'span'> &
   VariantProps<typeof badgeVariants> & {
-    children?: ReactNode
-    /** Icon rendered before the text. Icons are decorative. */
+    /** Icon rendered before the text. It is decorative: hidden from screen readers. */
     icon?: ReactNode
   }
 
@@ -36,11 +35,14 @@ function Badge({ variant, icon, className, children, ...props }: BadgeProps) {
   return (
     <span
       data-slot="badge"
-      data-variant={variant ?? 'outline'}
       className={cn(badgeVariants({ variant }), className)}
       {...props}
     >
-      {icon}
+      {icon ? (
+        <span aria-hidden="true" className="inline-flex shrink-0">
+          {icon}
+        </span>
+      ) : null}
       {children}
     </span>
   )
