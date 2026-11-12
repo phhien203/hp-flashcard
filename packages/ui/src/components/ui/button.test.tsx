@@ -49,6 +49,9 @@ describe('Button', () => {
     },
   )
 
+  // This is the hover check: Storybook's userEvent fires synthetic events,
+  // which never apply CSS :hover, so there is no Hover story (decided in
+  // PR #29 rather than adding storybook-addon-pseudo-states).
   it('lifts its shadow from shadow-rest to shadow-hover on hover', async () => {
     const screen = await render(<Button>Save</Button>)
     const button = screen.getByRole('button').element()
