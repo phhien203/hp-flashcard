@@ -102,6 +102,52 @@ describe('Checkbox', () => {
     await expect.element(screen.getByText('hiding')).toBeVisible()
   })
 
+  it('shows the hard shadow on hover', async () => {
+    const screen = await render(<Labelled />)
+    const checkbox = screen.getByRole('checkbox')
+
+    await expect.element(checkbox).toHaveStyle({ boxShadow: 'none' })
+    await checkbox.hover()
+    await expect
+      .poll(() => getComputedStyle(checkbox.element()).boxShadow)
+      .toMatch(/2px 2px 0px 0px/)
+    await userEvent.unhover(checkbox)
+  })
+
+  it('shows the ring color on keyboard focus', async () => {
+    const screen = await render(
+      <>
+        <Labelled />
+        {/* border-ring is always generated (theme.css @source inline). */}
+        <span data-testid="ring" className="border border-ring" />
+      </>,
+    )
+    const checkbox = screen.getByRole('checkbox')
+    const ring = getComputedStyle(
+      screen.getByTestId('ring').element(),
+    ).borderTopColor
+
+    await expect.element(checkbox).not.toHaveStyle({ borderTopColor: ring })
+    await userEvent.tab()
+    await expect.element(checkbox).toHaveFocus()
+    await expect.element(checkbox).toHaveStyle({ borderTopColor: ring })
+    await expect.element(checkbox).not.toHaveStyle({ boxShadow: 'none' })
+  })
+
+  it('ignores clicks when disabled', async () => {
+    const onCheckedChange = vi.fn()
+    const screen = await render(
+      <Labelled disabled onCheckedChange={onCheckedChange} />,
+    )
+    const checkbox = screen.getByRole('checkbox')
+
+    await checkbox.click({ force: true })
+
+    await expect.element(checkbox).toBeDisabled()
+    await expect.element(checkbox).not.toBeChecked()
+    expect(onCheckedChange).not.toHaveBeenCalled()
+  })
+
   it('is 16px with a 4px radius from the Figma tokens', async () => {
     const screen = await render(<Labelled />)
 

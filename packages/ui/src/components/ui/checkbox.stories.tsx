@@ -69,7 +69,12 @@ export const KeyboardFocus: Story = {
   },
 }
 
-/** Hover and keyboard focus side by side, pinned with the pseudo-state classes. */
+/**
+ * Hover and keyboard focus side by side. Real pseudo-states can't be pinned
+ * in a static story, so these copy the classes `checkbox.tsx` applies on
+ * `hover:` and `focus-visible:`; keep them in sync. The tests check the real
+ * hover and focus styles.
+ */
 export const States: Story = {
   render: (args) => (
     <div className="flex flex-col gap-200">
