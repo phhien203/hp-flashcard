@@ -102,6 +102,17 @@ function Flashcard({
     ? Math.min(Math.max(Math.round(progress), 0), MAX_PROGRESS)
     : 0
 
+  // Flipping back starts a turn that hides the answer only at its end, so
+  // keep the answer on the back until the turn ends. A new answer resets it:
+  // the next card's answer mustn't show on the back as it turns away.
+  const [turningBack, setTurningBack] = useState(false)
+  const [previous, setPrevious] = useState({ flipped, answer })
+  if (previous.flipped !== flipped || previous.answer !== answer) {
+    setPrevious({ flipped, answer })
+    setTurningBack(previous.flipped && !flipped && previous.answer === answer)
+  }
+  const showAnswer = flipped || turningBack
+
   const flip = () => {
     if (flippedProp === undefined) setFlippedState(!flipped)
     onFlippedChange?.(!flipped)
@@ -119,6 +130,9 @@ function Flashcard({
           'grid transition-transform duration-400 ease-in-out transform-3d motion-reduce:transition-none',
           flipped && 'rotate-y-180',
         )}
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget) setTurningBack(false)
+        }}
       >
         <FlashcardFace
           side="front"
@@ -138,7 +152,7 @@ function Flashcard({
           category={category}
           progress={count}
         >
-          {flipped ? (
+          {showAnswer ? (
             <>
               <p className="text-preset-4-medium">Answer:</p>
               <p className="text-preset-1">{answer}</p>

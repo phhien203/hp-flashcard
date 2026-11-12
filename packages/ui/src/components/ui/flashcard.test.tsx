@@ -53,6 +53,30 @@ describe('Flashcard', () => {
     await expect.element(screen.getByText('Answer:')).toBeVisible()
   })
 
+  it('keeps the answer on the back while it turns away, then removes it', async () => {
+    const screen = await renderCard()
+    await screen.getByRole('button', { name: 'Show answer' }).click()
+    await settle(inner(screen.container))
+
+    await screen.getByRole('button', { name: 'Show question' }).click()
+    // Mid-turn, the back still shows the answer rather than a blank face.
+    expect(screen.container.textContent).toContain(card.answer)
+
+    await settle(inner(screen.container))
+    await expect
+      .poll(() => screen.container.textContent)
+      .not.toContain(card.answer)
+  })
+
+  it('does not show a new answer on a back that is turning away', async () => {
+    const screen = await renderCard({ defaultFlipped: true })
+
+    await screen.getByRole('button', { name: 'Show question' }).click()
+    await screen.rerender(<Flashcard {...card} answer="Lyon" />)
+
+    expect(screen.container.textContent).not.toContain('Lyon')
+  })
+
   it('flips to the answer on click, and back again', async () => {
     const screen = await renderCard()
 
