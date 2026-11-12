@@ -78,9 +78,10 @@ function FlashcardFace({
  * The Study Mode card. The front is pink and shows the question, the back is
  * blue and shows the answer; both carry the category and the progress count.
  *
- * The whole face is one toggle button (`aria-pressed`), named "Show answer"
- * or "Show question". It lies over the card's content rather than wrapping
- * it, so screen readers still read the question and answer as text. Click,
+ * The whole face is one plain button, named "Show answer" or "Show
+ * question" for what it does next. It has no `aria-pressed`, since a
+ * toggle's name should not change with its state. It lies over the card's
+ * content rather than wrapping it, so screen readers still read the question and answer as text. Click,
  * Enter or Space flips the card with a 3D turn, instant under
  * `prefers-reduced-motion`. Pass `flipped` and `onFlippedChange` to control
  * it, or `defaultFlipped` to let it manage itself.
@@ -163,7 +164,6 @@ function Flashcard({
       <button
         type="button"
         data-slot="flashcard-button"
-        aria-pressed={flipped}
         aria-label={flipped ? 'Show question' : 'Show answer'}
         onClick={flip}
         className="absolute inset-0 cursor-pointer rounded-24 outline-none"

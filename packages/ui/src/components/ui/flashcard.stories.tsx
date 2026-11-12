@@ -44,8 +44,9 @@ type Story = StoryObj<typeof meta>
 /** Figma "Study Mode": the pink question side. */
 export const Question: Story = {
   play: async ({ canvas, canvasElement }) => {
+    // A plain button, not a toggle: its name says what it does next.
     const button = canvas.getByRole('button', { name: 'Show answer' })
-    await expect(button).toHaveAttribute('aria-pressed', 'false')
+    await expect(button).not.toHaveAttribute('aria-pressed')
     await expect(canvas.getByText('Click to reveal answer')).toBeVisible()
     await expect(canvas.queryByText('Paris')).toBeNull()
     await expect(
@@ -60,7 +61,7 @@ export const Answer: Story = {
   play: async ({ canvas, canvasElement }) => {
     await expect(
       canvas.getByRole('button', { name: 'Show question' }),
-    ).toHaveAttribute('aria-pressed', 'true')
+    ).toBeInTheDocument()
     await expect(canvas.getByText('Answer:')).toBeVisible()
     await expect(canvas.getByText('Paris')).toBeVisible()
     await expect(
@@ -97,7 +98,6 @@ export const FlipOnClick: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Show answer' }))
 
     const button = canvas.getByRole('button', { name: 'Show question' })
-    await expect(button).toHaveAttribute('aria-pressed', 'true')
     await expect(canvas.getByText('Paris')).toBeVisible()
     await expect(args.onFlippedChange).toHaveBeenLastCalledWith(true)
 
@@ -107,7 +107,7 @@ export const FlipOnClick: Story = {
     await userEvent.click(button)
     await expect(
       canvas.getByRole('button', { name: 'Show answer' }),
-    ).toHaveAttribute('aria-pressed', 'false')
+    ).toBeInTheDocument()
     await expect(args.onFlippedChange).toHaveBeenLastCalledWith(false)
   },
 }
@@ -120,11 +120,9 @@ export const Keyboard: Story = {
     await expect(button).toHaveFocus()
 
     await userEvent.keyboard('{Enter}')
-    await expect(button).toHaveAttribute('aria-pressed', 'true')
     await expect(button).toHaveAccessibleName('Show question')
 
     await userEvent.keyboard(' ')
-    await expect(button).toHaveAttribute('aria-pressed', 'false')
     await expect(button).toHaveAccessibleName('Show answer')
   },
 }
