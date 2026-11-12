@@ -1,15 +1,21 @@
-import type { SVGProps } from 'react'
-
 import { cn } from '../../lib/utils.js'
 
-// Stand-ins: the Figma Logo section (node 350:2584) couldn't be exported yet
-// (#7), so these are drawn by hand to the documented sizes. Replace the
-// artwork here when the Figma export lands; AppHeader needs no change.
+/*
+ * The AppHeader's logo artwork: inline SVG, hidden from assistive technology
+ * (the header names the logo), and private to the AppHeader (not exported
+ * from the barrel).
+ *
+ * Stand-ins: the Figma Logo section (node 350:2584) couldn't be exported yet
+ * (#7), so these are drawn by hand to the documented sizes. Replace the
+ * artwork here when the Figma export lands; AppHeader needs no change.
+ */
 
-type LogoArtProps = Omit<SVGProps<SVGSVGElement>, 'children' | 'viewBox'>
+interface LogoArtProps {
+  className?: string
+}
 
 /** The 40×40 mark: a stack of two cards on the yellow primary tile. */
-export function LogoMark({ className, ...props }: LogoArtProps) {
+export function LogoMark({ className }: LogoArtProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -18,7 +24,6 @@ export function LogoMark({ className, ...props }: LogoArtProps) {
       focusable="false"
       data-slot="logo-mark"
       className={cn('size-500 shrink-0', className)}
-      {...props}
     >
       <rect
         x="1"
@@ -53,7 +58,7 @@ export function LogoMark({ className, ...props }: LogoArtProps) {
 }
 
 /** The full logo: the mark followed by the "Flashcard" wordmark. */
-export function Logo({ className }: { className?: string }) {
+export function Logo({ className }: LogoArtProps) {
   return (
     <span
       aria-hidden
