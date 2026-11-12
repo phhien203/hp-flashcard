@@ -25,7 +25,7 @@
 /* prettier-ignore */
 @source inline('{bg,text,border}-{neutral-{950,900,600,300,100,0},yellow-500,blue-{400,600},teal-400,pink-{400,500,700}}');
 /* prettier-ignore */
-@source inline('{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,destructive,border,input,ring}');
+@source inline('{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,mastered,mastered-foreground,destructive,border,input,ring}');
 /* prettier-ignore */
 @source inline('{,hover:}shadow-{rest,hover} focus-visible:shadow-ring focus-visible:border-ring');
 
@@ -144,6 +144,8 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-mastered: var(--mastered);
+  --color-mastered-foreground: var(--mastered-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -195,6 +197,9 @@
   --muted-foreground: var(--neutral-600);
   --accent: var(--neutral-100);
   --accent-foreground: var(--neutral-900);
+  /* The "Mastered" pill: the same in both themes, so .dark doesn't remap it. */
+  --mastered: var(--teal-400);
+  --mastered-foreground: var(--neutral-900);
   /* 4.63:1 on white but 4.2:1 on neutral-100: use it on white surfaces only. */
   --destructive: var(--pink-700);
   --border: var(--neutral-900);

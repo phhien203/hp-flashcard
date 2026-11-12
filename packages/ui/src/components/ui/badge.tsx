@@ -10,9 +10,9 @@ const badgeVariants = cva(
       variant: {
         // A card's category tag: follows the theme.
         outline: 'border-border bg-card text-card-foreground',
-        // The "Mastered" pill: the same teal and dark ink in both themes, so
-        // it uses primitives rather than roles.
-        mastered: 'border-neutral-900 bg-teal-400 text-neutral-900',
+        // The "Mastered" pill: the same teal and dark ink in both themes.
+        mastered:
+          'border-mastered-foreground bg-mastered text-mastered-foreground',
       },
     },
     defaultVariants: {
