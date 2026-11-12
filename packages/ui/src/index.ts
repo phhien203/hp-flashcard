@@ -24,6 +24,7 @@ export {
   buttonVariants,
   type ButtonProps,
 } from './components/ui/button.js'
+export { CardTile, type CardTileProps } from './components/ui/card-tile.js'
 export { Checkbox, type CheckboxProps } from './components/ui/checkbox.js'
 export {
   Dialog,

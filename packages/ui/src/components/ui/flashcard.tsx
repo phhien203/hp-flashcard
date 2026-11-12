@@ -2,11 +2,9 @@ import { useState, type ComponentProps, type ReactNode } from 'react'
 
 import { cn } from '../../lib/utils.js'
 import { Badge } from './badge.js'
+import { clampProgress, MAX_PROGRESS } from './card-progress.js'
 import { FlashcardPattern, FlashcardSparkles } from './flashcard-decor.js'
 import { Progress } from './progress.js'
-
-/** A card is mastered after this many correct answers. */
-const MAX_PROGRESS = 5
 
 interface FlashcardProps extends Omit<ComponentProps<'div'>, 'children'> {
   /** The question, shown on the front. */
@@ -100,9 +98,7 @@ function Flashcard({
 }: FlashcardProps) {
   const [flippedState, setFlippedState] = useState(defaultFlipped)
   const flipped = flippedProp ?? flippedState
-  const count = Number.isFinite(progress)
-    ? Math.min(Math.max(Math.round(progress), 0), MAX_PROGRESS)
-    : 0
+  const count = clampProgress(progress)
 
   // Flipping back starts a turn that hides the answer only at its end, so
   // keep the answer on the back until the turn ends. A new answer resets it:
