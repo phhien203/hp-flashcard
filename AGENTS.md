@@ -26,7 +26,8 @@ shadcn is a starting point: generated code is ours to reshape to the Figma desig
 
 - `src/styles/theme.css` is the **token source**: CSS variables plus `@theme inline`. It ships as `@hp-flashcard/ui/theme.css` for consumers on Tailwind v4. Its `@source "../"` resolves relative to the file, so it scans `src/` here and `dist/` once published. Keep that line.
 - `src/styles/styles.css` is the entry the Tailwind CLI compiles into the precompiled `@hp-flashcard/ui/styles.css`.
-- The tokens are **placeholders** (shadcn defaults) until the Figma tokens arrive. The one deliberate deviation is light `--destructive`, darkened to red-700 to pass contrast checks.
+- Colors come from Figma in two layers: **primitives** named as in Figma (`--neutral-900`, `--yellow-500`, …) and shadcn-named **semantic roles** (`--background`, `--primary`, …) that point at them, remapped under `.dark`. Tailwind's default palette and `shadow-*` scale are cleared, so only Figma colors and `shadow-rest`/`shadow-hover` exist. Components use roles. Roles reference primitives directly, never other roles: an alias on `:root` would ignore a nested `.dark`.
+- Focus styling goes on `focus-visible:` only and uses `ring`.
 
 ## Storybook and tests
 
