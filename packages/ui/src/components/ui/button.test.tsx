@@ -53,13 +53,22 @@ describe('Button', () => {
   // which never apply CSS :hover, so there is no Hover story (decided in
   // PR #29 rather than adding storybook-addon-pseudo-states).
   it('lifts its shadow from shadow-rest to shadow-hover on hover', async () => {
-    const screen = await render(<Button>Save</Button>)
+    const screen = await render(
+      <>
+        <Button>Save</Button>
+        <p>Elsewhere</p>
+      </>,
+    )
     const button = screen.getByRole('button').element()
 
+    // Earlier tests click a Button, and this one renders in the same spot,
+    // so the pointer can start over it (Firefox then applies :hover).
+    await screen.getByText('Elsewhere').hover()
     expect(await shadowOffsets(button)).toBe('2px 2px 0px 0px')
 
     await userEvent.hover(button)
     expect(await shadowOffsets(button)).toBe('4px 4px 0px 0px')
+    await userEvent.unhover(button)
   })
 
   it('does not call onClick when disabled', async () => {
