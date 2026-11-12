@@ -32,6 +32,26 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * shadcn's data-state variants, copied from `shadcn/dist/tailwind.css` (a
+ * dev-only package, so it can't be imported here). Unlike Tailwind's built-in
+ * `data-*` variants, they skip `data-checked="false"` and also match Radix's
+ * `data-state`.
+ */
+@custom-variant data-checked {
+  &:where([data-state='checked']),
+  &:where([data-checked]:not([data-checked='false'])) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled='true']),
+  &:where([data-disabled]:not([data-disabled='false'])) {
+    @slot;
+  }
+}
+
+/*
  * Spacing, radius and size tokens from the Figma file (`spacing/*` and
  * `corner-radius/*`). Developers pick from these names only: Tailwind's
  * spacing multiplier and its radius and container scales are cleared, so
