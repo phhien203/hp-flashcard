@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn } from 'storybook/test'
 
 import { createIcon } from '../icons/create-icon.js'
+import { settle } from '../../test/settle.js'
 import { Button } from './button.js'
 
 // Sample icons for the stories only; the Figma icon set ships separately.
@@ -20,10 +21,6 @@ const Plus = createIcon(
   '0 0 16 16',
   <path d="M8 2a1 1 0 0 1 1 1v4h4a1 1 0 1 1 0 2H9v4a1 1 0 1 1-2 0V9H3a1 1 0 0 1 0-2h4V3a1 1 0 0 1 1-1Z" />,
 )
-
-/** Waits for the shadow transition to finish before reading styles. */
-const settle = (element: Element) =>
-  Promise.all(element.getAnimations().map(({ finished }) => finished))
 
 /** A CSS color as the browser resolves it, for comparing with styles. */
 const resolved = (css: string) => {

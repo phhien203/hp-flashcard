@@ -4,10 +4,11 @@ import { userEvent } from 'vitest/browser'
 
 // Import from the public barrel so a missing export fails the test.
 import { Button, type ButtonProps } from '../../index.js'
+import { settle } from '../../test/settle.js'
 
 /** The last box-shadow layer (the token one), without its color. */
 const shadowOffsets = async (element: Element) => {
-  await Promise.all(element.getAnimations().map(({ finished }) => finished))
+  await settle(element)
   return getComputedStyle(element)
     .boxShadow.replace(/[a-z]+\([^)]*\)/g, '')
     .split(',')
