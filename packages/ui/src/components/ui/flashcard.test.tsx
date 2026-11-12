@@ -22,11 +22,12 @@ const inner = (root: Element) =>
   root.querySelector('[data-slot="flashcard-inner"]')!
 
 describe('Flashcard', () => {
-  it('shows the question side as a "Show answer" toggle button, not pressed', async () => {
+  it('shows the question side as a plain "Show answer" button', async () => {
     const screen = await renderCard()
 
     const button = screen.getByRole('button', { name: 'Show answer' })
-    await expect.element(button).toHaveAttribute('aria-pressed', 'false')
+    // Not a toggle: the name changes with the side, so it carries no state.
+    await expect.element(button).not.toHaveAttribute('aria-pressed')
     await expect.element(screen.getByText(card.question)).toBeVisible()
     await expect
       .element(screen.getByText('Click to reveal answer'))
@@ -82,7 +83,7 @@ describe('Flashcard', () => {
 
     await screen.getByRole('button', { name: 'Show answer' }).click()
     const flipped = screen.getByRole('button', { name: 'Show question' })
-    await expect.element(flipped).toHaveAttribute('aria-pressed', 'true')
+    await expect.element(flipped).not.toHaveAttribute('aria-pressed')
     const answer = screen.getByText(card.answer).element()
     expect(answer.closest('[aria-hidden="true"]')).toBeNull()
     // The question side is hidden from assistive technology while turned away.
@@ -93,7 +94,7 @@ describe('Flashcard', () => {
     await flipped.click()
     await expect
       .element(screen.getByRole('button', { name: 'Show answer' }))
-      .toHaveAttribute('aria-pressed', 'false')
+      .toBeInTheDocument()
   })
 
   it('flips with Enter and with Space', async () => {
@@ -110,10 +111,10 @@ describe('Flashcard', () => {
     await expect.element(flashcard).toHaveFocus()
 
     await userEvent.keyboard('{Enter}')
-    await expect.element(flashcard).toHaveAttribute('aria-pressed', 'true')
+    await expect.element(flashcard).toHaveAccessibleName('Show question')
 
     await userEvent.keyboard(' ')
-    await expect.element(flashcard).toHaveAttribute('aria-pressed', 'false')
+    await expect.element(flashcard).toHaveAccessibleName('Show answer')
   })
 
   it('shows keyboard focus on the visible face, in the ring color', async () => {
@@ -187,7 +188,7 @@ describe('Flashcard', () => {
 
     await expect
       .element(screen.getByRole('button', { name: 'Show question' }))
-      .toHaveAttribute('aria-pressed', 'true')
+      .toBeInTheDocument()
     await expect.element(screen.getByText(card.answer)).toBeVisible()
   })
 
@@ -211,7 +212,7 @@ describe('Flashcard', () => {
     expect(onFlippedChange).toHaveBeenCalledWith(true)
     await expect
       .element(screen.getByRole('button', { name: 'Show answer' }))
-      .toHaveAttribute('aria-pressed', 'false')
+      .toBeInTheDocument()
     expect(screen.container.textContent).not.toContain(card.answer)
   })
 
