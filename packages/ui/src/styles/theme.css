@@ -25,7 +25,7 @@
 /* prettier-ignore */
 @source inline('{bg,text,border}-{neutral-{950,900,600,300,100,0},yellow-500,blue-{400,600},teal-400,pink-{400,500,700}}');
 /* prettier-ignore */
-@source inline('{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,mastered,mastered-foreground,flashcard-question,flashcard-answer,flashcard-foreground,flashcard-sparkle,destructive,border,input,ring}');
+@source inline('{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,mastered,mastered-foreground,flashcard-question,flashcard-answer,flashcard-foreground,flashcard-sparkle,stat-blue,stat-teal,stat-pink,stat-pink-light,stat-foreground,destructive,border,input,ring}');
 /* prettier-ignore */
 @source inline('{,hover:}shadow-{rest,hover} focus-visible:shadow-ring focus-visible:border-ring');
 
@@ -150,6 +150,11 @@
   --color-flashcard-answer: var(--flashcard-answer);
   --color-flashcard-foreground: var(--flashcard-foreground);
   --color-flashcard-sparkle: var(--flashcard-sparkle);
+  --color-stat-blue: var(--stat-blue);
+  --color-stat-teal: var(--stat-teal);
+  --color-stat-pink: var(--stat-pink);
+  --color-stat-pink-light: var(--stat-pink-light);
+  --color-stat-foreground: var(--stat-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -209,6 +214,12 @@
   --flashcard-answer: var(--blue-400);
   --flashcard-foreground: var(--neutral-900);
   --flashcard-sparkle: var(--yellow-500);
+  /* The StatTile accent panels and their icon ink: the same in both themes. */
+  --stat-blue: var(--blue-400);
+  --stat-teal: var(--teal-400);
+  --stat-pink: var(--pink-500);
+  --stat-pink-light: var(--pink-400);
+  --stat-foreground: var(--neutral-900);
   /* 4.63:1 on white but 4.2:1 on neutral-100: use it on white surfaces only. */
   --destructive: var(--pink-700);
   --border: var(--neutral-900);
