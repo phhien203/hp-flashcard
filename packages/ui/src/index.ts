@@ -28,4 +28,10 @@ export {
 } from './components/ui/menu.js'
 export { Progress, type ProgressProps } from './components/ui/progress.js'
 export { Textarea, type TextareaProps } from './components/ui/textarea.js'
+export {
+  ToastProvider,
+  useToast,
+  type ToastOptions,
+  type ToastProviderProps,
+} from './components/ui/toast.js'
 export { cn } from './lib/utils.js'
