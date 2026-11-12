@@ -135,17 +135,20 @@ describe('CardTile', () => {
     expect(onDelete).not.toHaveBeenCalled()
   })
 
-  it('wraps a long unbroken answer inside the tile', async () => {
+  it('wraps a long unbroken question and answer inside the tile', async () => {
+    const question = 'Hippopotomonstrosesquippedaliophobia'.repeat(3)
     const answer = 'Pneumonoultramicroscopicsilicovolcanoconiosis'.repeat(3)
     const screen = await render(
       <div style={{ width: '280px' }}>
-        <CardTile {...card} answer={answer} />
+        <CardTile {...card} question={question} answer={answer} />
       </div>,
     )
 
     const tile = screen.getByRole('article').element().getBoundingClientRect()
-    const text = screen.getByText(answer).element().getBoundingClientRect()
-    expect(text.right).toBeLessThanOrEqual(tile.right)
+    for (const text of [question, answer]) {
+      const box = screen.getByText(text).element().getBoundingClientRect()
+      expect(box.right).toBeLessThanOrEqual(tile.right)
+    }
   })
 
   it('keeps the actions menu inside a narrow tile with a long category', async () => {
@@ -165,6 +168,7 @@ describe('CardTile', () => {
       .element()
       .getBoundingClientRect()
     expect(trigger.right).toBeLessThanOrEqual(tile.right)
+    // Wider than its 16px icon: the long category didn't squeeze the trigger.
     expect(trigger.width).toBeGreaterThan(16)
   })
 
