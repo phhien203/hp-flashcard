@@ -1,0 +1,204 @@
+name: Agent — Fix Review Feedback
+
+# Create agent:fix-review once, then apply it to an existing same-repo PR.
+# The trigger is removed at the start; reapply it to retry after clarifying
+# a blocked thread. Replies alone do not trigger a run. Uses the same secrets
+# as agent-review.yml. Never force-pushes or resolves threads automatically.
+#
+# The trigger label does not exist in a fresh clone. Create it once:
+#   gh label create "agent:fix-review" --color 5319E7 \
+#     --description "Ask the fix-review workflow to address open review threads"
+#
+# The agent's entry point comes from the revision that supplied this
+# workflow, but its imports (@ai-hero/sandcastle, zod) resolve from the PR
+# checkout. A PR branched before the factory was added lacks them and fails
+# at import: rebase it onto main first.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+# Share the review workflow's lock: both jobs write to the same PR branch.
+concurrency:
+  group: ${{ github.event.label.name == 'agent:fix-review' && format('agent-review-{0}', github.event.pull_request.number) || format('ignore-fix-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  fix-review:
+    if: github.event.label.name == 'agent:fix-review' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Transition labels and read current head
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          gh label create agent:in-progress --color FBCA04 --description 'An agent is working on this right now' || true
+          gh label create agent:blocked --color B60205 --description 'An agent needs a person; see its comment' || true
+          gh pr edit "$PR_NUMBER" --remove-label agent:fix-review
+          gh pr edit "$PR_NUMBER" --remove-label agent:blocked || true
+          gh pr edit "$PR_NUMBER" --add-label agent:in-progress
+          gh pr view "$PR_NUMBER" --json headRefOid,headRefName,state > /tmp/fix-review-pr.json
+          test "$(jq -r .state /tmp/fix-review-pr.json)" = OPEN
+          echo "sha=$(jq -r .headRefOid /tmp/fix-review-pr.json)" >> "$GITHUB_OUTPUT"
+          echo "branch=$(jq -r .headRefName /tmp/fix-review-pr.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect unresolved threads and replies
+        id: threads
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          # Pagination covers every thread. Refuse truncated conversations
+          # rather than lose a later human decision in a very long thread.
+          gh api graphql --paginate --slurp \
+            -F owner="${GH_REPO%/*}" -F name="${GH_REPO#*/}" -F number="$PR_NUMBER" \
+            -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String) {
+              repository(owner:$owner,name:$name) { pullRequest(number:$number) {
+                reviewThreads(first:100,after:$endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes { id isResolved path line
+                    comments(first:100) { pageInfo { hasNextPage }
+                      nodes { databaseId body author { login } authorAssociation createdAt }
+                    }
+                  }
+                }
+              } }
+            }' > /tmp/fix-review-pages.json
+          jq '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)]' \
+            /tmp/fix-review-pages.json > /tmp/fix-review-threads.json
+          jq -e 'all(.[]; .comments.pageInfo.hasNextPage == false)' /tmp/fix-review-threads.json
+          echo "count=$(jq length /tmp/fix-review-threads.json)" >> "$GITHUB_OUTPUT"
+
+      # Older PR branches need not contain the newly added agent. Load its
+      # entry point from the revision that supplied this workflow instead.
+      # Its imports resolve dependencies from the PR checkout's node_modules.
+      - name: Checkout factory tooling
+        if: steps.threads.outputs.count != '0'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .factory-tools
+          sparse-checkout: .sandcastle/agent-workflows
+          persist-credentials: false
+
+      - name: Setup pnpm, Node.js and dependencies
+        # Same as ci.yml: pnpm from packageManager, Node from .nvmrc,
+        # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
+        if: steps.threads.outputs.count != '0'
+        uses: ./.github/actions/setup
+
+      - name: Install Playwright Chromium
+        # `pnpm test` runs Vitest in browser mode, so the agent needs a browser.
+        if: steps.threads.outputs.count != '0'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Claude Code
+        if: steps.threads.outputs.count != '0'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Open the branch
+        if: steps.threads.outputs.count != '0'
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name 'agent-factory[bot]'
+          git config user.email 'agent-factory[bot]@users.noreply.github.com'
+          git checkout -B "$BRANCH"
+          echo '/.factory-tools/' >> .git/info/exclude
+          # `pnpm install` ran husky, which points git at .husky/_. If it did
+          # not, the agent's commits would skip the hook unnoticed.
+          if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
+            echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
+            exit 1
+          fi
+
+      - name: Fix the feedback
+        if: steps.threads.outputs.count != '0'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: pnpm exec tsx .factory-tools/.sandcastle/agent-workflows/fix-review/fix-review.ts
+
+      - name: Push commits to the existing PR
+        if: steps.threads.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          git merge-base --is-ancestor "$HEAD_SHA" HEAD
+          test -z "$(git diff --name-only "$HEAD_SHA" HEAD -- .github/)"
+          # Also reject movement when the agent produced no commits, so its
+          # thread replies cannot claim success against a different head.
+          test "$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)" = "$HEAD_SHA"
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+            git -c core.hooksPath=/dev/null \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              push "https://github.com/${GH_REPO}.git" "HEAD:refs/heads/$BRANCH"
+          fi
+
+      - name: Reply to the review threads
+        if: steps.threads.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          # Map IDs to the original snapshot, never to an agent-selected PR.
+          jq -c '.replies[]' "$RUNNER_TEMP/fix-review-replies.json" | while IFS= read -r reply; do
+            thread=$(jq -r .threadId <<< "$reply")
+            comment=$(jq -r --arg id "$thread" '.[] | select(.id == $id) | .comments.nodes[0].databaseId' /tmp/fix-review-threads.json)
+            jq --arg run "$RUN_URL" '{body: (.body + "\n\nStatus: **" + .status + "**. [Fix-review run](" + $run + "). Left open for verification.")}' \
+              <<< "$reply" > /tmp/fix-review-reply.json
+            gh api --method POST "repos/$GH_REPO/pulls/$PR_NUMBER/comments/$comment/replies" \
+              --input /tmp/fix-review-reply.json --silent
+          done
+          if jq -e 'any(.replies[]; .status == "blocked")' "$RUNNER_TEMP/fix-review-replies.json" > /dev/null; then
+            gh pr edit "$PR_NUMBER" --add-label agent:blocked
+          fi
+
+      - name: Post summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          JOB_STATUS: ${{ job.status }}
+          THREAD_COUNT: ${{ steps.threads.outputs.count }}
+        run: |
+          set -euo pipefail
+          if [ "$JOB_STATUS" != success ]; then
+            printf 'Fix-review failed. Do not assume fixes were pushed or feedback addressed. Check [logs](%s), then reapply `agent:fix-review`.\n' "$RUN_URL" > /tmp/fix-review-summary.md
+          elif [ "$THREAD_COUNT" = 0 ]; then
+            echo 'No unresolved inline review threads. Nothing to fix.' > /tmp/fix-review-summary.md
+          fi
+          test -s /tmp/fix-review-summary.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/fix-review-summary.md
+
+      - name: Mark failures blocked
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --add-label agent:blocked
+
+      - name: Remove in-progress
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --remove-label agent:in-progress
