@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 
-import { Logo, LogoMark } from '../icons/logo.js'
+import { Logo, LogoMark } from './app-header-logo.js'
 import { cn } from '../../lib/utils.js'
 
 interface AppHeaderProps extends Omit<ComponentProps<'header'>, 'children'> {
