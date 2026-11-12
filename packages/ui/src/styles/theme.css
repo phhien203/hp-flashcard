@@ -75,6 +75,14 @@
   --shadow-*: initial;
   --shadow-rest: 2px 2px 0 0 var(--shadow-color);
   --shadow-hover: 4px 4px 0 0 var(--shadow-color);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
@@ -119,6 +127,7 @@
   --input: var(--neutral-900);
   --ring: var(--blue-600);
   --shadow-color: var(--neutral-900);
+  --radius: 0.625rem;
 }
 
 .dark {
