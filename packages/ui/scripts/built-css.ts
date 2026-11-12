@@ -1,7 +1,7 @@
 /*
  * Checks for the precompiled `dist/styles.css`, kept free of Node APIs so
  * they run in the browser-mode unit tests too. Later token tickets extend
- * REQUIRED_SELECTORS and FORBIDDEN_SELECTORS.
+ * REQUIRED_SELECTORS and FORBIDDEN_PATTERNS.
  */
 
 /** Utilities the precompiled CSS must contain: the Figma tokens. */
@@ -26,12 +26,18 @@ export const FORBIDDEN_PATTERNS: { name: string; pattern: RegExp }[] = [
 ]
 
 const FONT_FAMILY = 'Poppins'
-const FONT_WEIGHTS = ['400', '500', '600', '700']
+/** The Poppins weights fonts.css loads. */
+export const FONT_WEIGHTS = ['400', '500', '600', '700']
+
+/** Every @font-face rule, as text. */
+function fontFaces(css: string): string[] {
+  return [...css.matchAll(/@font-face\s*{[^}]*}/g)].map(([face]) => face)
+}
 
 /** Every url() inside an @font-face rule. */
 export function fontFaceUrls(css: string): string[] {
   const urls: string[] = []
-  for (const [block] of css.matchAll(/@font-face\s*{[^}]*}/g)) {
+  for (const block of fontFaces(css)) {
     for (const [, raw = ''] of block.matchAll(/url\(([^)]*)\)/g)) {
       urls.push(raw.trim().replace(/^(['"])(.*)\1$/, '$2'))
     }
@@ -89,7 +95,7 @@ export function checkBuiltCss({
     if (pattern.test(css)) errors.push(`contains ${name}`)
   }
 
-  const faces = [...css.matchAll(/@font-face\s*{[^}]*}/g)].map(([b]) => b)
+  const faces = fontFaces(css)
   for (const weight of FONT_WEIGHTS) {
     const found = faces.some(
       (face) =>

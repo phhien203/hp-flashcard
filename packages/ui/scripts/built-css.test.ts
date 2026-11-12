@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   checkBuiltCss,
+  FONT_WEIGHTS,
   fontFaceUrls,
   REQUIRED_SELECTORS,
   resolvePackagePath,
@@ -12,15 +13,13 @@ const fontFace = (weight: string, url: string) =>
 
 const fontFile = (weight: string) => `./files/poppins-latin-${weight}.woff2`
 
-const weights = ['400', '500', '600', '700']
-
 const goodCss = [
   ':root{--font-sans:"Poppins", ui-sans-serif, system-ui, sans-serif}',
   ...REQUIRED_SELECTORS.map((selector) => `${selector}{font-size:1rem}`),
-  ...weights.map((weight) => fontFace(weight, fontFile(weight))),
+  ...FONT_WEIGHTS.map((weight) => fontFace(weight, fontFile(weight))),
 ].join('')
 
-const goodFiles = weights.map(
+const goodFiles = FONT_WEIGHTS.map(
   (weight) => `dist/files/poppins-latin-${weight}.woff2`,
 )
 
