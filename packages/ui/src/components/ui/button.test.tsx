@@ -133,6 +133,50 @@ describe('Button', () => {
     expect([unnamed, labelled]).toHaveLength(2)
   })
 
+  it.each([
+    ['a blank aria-label', { 'aria-label': '  ' }],
+    ['a blank aria-labelledby', { 'aria-labelledby': '' }],
+  ] as const)(
+    'warns in development when the icon-only size has %s',
+    async (_, name) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        await render(
+          <Button size="icon" {...name}>
+            <Icon />
+          </Button>,
+        )
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('size="icon"'),
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    },
+  )
+
+  it('does not warn when the icon-only size is named', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await render(
+        <>
+          <span id="add-label">Add card</span>
+          <Button size="icon" aria-label="Add card">
+            <Icon />
+          </Button>
+          <Button size="icon" aria-label="" aria-labelledby="add-label">
+            <Icon />
+          </Button>
+        </>,
+      )
+
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('merges a consumer className over the variant classes', async () => {
     const screen = await render(<Button className="px-400">Save</Button>)
 
