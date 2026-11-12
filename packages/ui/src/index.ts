@@ -1,3 +1,4 @@
+export { AppHeader, type AppHeaderProps } from './components/ui/app-header.js'
 export { Badge, type BadgeProps } from './components/ui/badge.js'
 export {
   AlertDialog,
