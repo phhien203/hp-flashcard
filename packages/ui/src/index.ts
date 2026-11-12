@@ -65,6 +65,11 @@ export {
   type MenuTriggerProps,
 } from './components/ui/menu.js'
 export { Progress, type ProgressProps } from './components/ui/progress.js'
+export {
+  SegmentedNav,
+  type SegmentedNavItem,
+  type SegmentedNavProps,
+} from './components/ui/segmented-nav.js'
 export { Textarea, type TextareaProps } from './components/ui/textarea.js'
 export {
   ToastProvider,
