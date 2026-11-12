@@ -32,10 +32,9 @@ export const Mastered: Story = {
   play: async ({ canvasElement, canvas }) => {
     await expect(canvas.getByText('Mastered')).toBeVisible()
     // The icon is decorative: hidden from assistive technology.
-    await expect(canvasElement.querySelector('svg')).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    )
+    await expect(
+      canvasElement.querySelector('svg')?.closest('[aria-hidden="true"]'),
+    ).not.toBeNull()
   },
 }
 
@@ -49,4 +48,10 @@ export const Variants: Story = {
       <Badge variant="mastered">Mastered</Badge>
     </div>
   ),
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText('Geography')).toBeVisible()
+    for (const pill of canvas.getAllByText('Mastered')) {
+      await expect(pill).toBeVisible()
+    }
+  },
 }

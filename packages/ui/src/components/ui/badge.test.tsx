@@ -4,7 +4,8 @@ import { render } from 'vitest-browser-react'
 // Import from the public barrel so a missing export fails the test.
 import { Badge } from '../../index.js'
 
-const color = (element: Element) => getComputedStyle(element).backgroundColor
+const background = (element: Element) =>
+  getComputedStyle(element).backgroundColor
 
 describe('Badge', () => {
   it('shows its text', async () => {
@@ -21,8 +22,8 @@ describe('Badge', () => {
       </>,
     )
 
-    expect(color(screen.getByText('Default').element())).toBe(
-      color(screen.getByText('Outline').element()),
+    expect(background(screen.getByText('Default').element())).toBe(
+      background(screen.getByText('Outline').element()),
     )
   })
 
@@ -34,10 +35,13 @@ describe('Badge', () => {
     )
     const pill = screen.getByText('Mastered').element()
 
-    expect(color(pill)).toBe('rgb(71, 217, 201)') // teal-400
+    expect(background(pill)).toBe('rgb(71, 217, 201)') // teal-400
     expect(getComputedStyle(pill).color).toBe('rgb(46, 20, 1)') // neutral-900
-    // The icon comes before the text.
-    expect(pill.firstElementChild).toBe(screen.getByTestId('icon').element())
+    // The icon comes before the text, hidden from assistive technology even
+    // when the consumer's icon doesn't hide itself.
+    const icon = screen.getByTestId('icon').element()
+    expect(pill.firstElementChild?.contains(icon)).toBe(true)
+    expect(icon.closest('[aria-hidden="true"]')).not.toBeNull()
   })
 
   it('keeps the mastered pill the same in the dark theme', async () => {
@@ -49,10 +53,10 @@ describe('Badge', () => {
     )
     const pill = screen.getByText('Mastered').element()
 
-    expect(color(pill)).toBe('rgb(71, 217, 201)')
+    expect(background(pill)).toBe('rgb(71, 217, 201)')
     expect(getComputedStyle(pill).color).toBe('rgb(46, 20, 1)')
     // The category tag follows the theme: neutral-900 card in dark.
-    expect(color(screen.getByText('Tag').element())).toBe('rgb(46, 20, 1)')
+    expect(background(screen.getByText('Tag').element())).toBe('rgb(46, 20, 1)')
   })
 
   it('passes through span props', async () => {
