@@ -73,9 +73,13 @@ export const LongLabel: Story = {
     accent: 'teal-400',
     icon: <IconCheck />,
   },
-  play: async ({ args, canvas }) => {
+  play: async ({ args, canvas, canvasElement }) => {
     const tile = canvas.getByRole('group').getBoundingClientRect()
     const label = canvas.getByText(String(args.label)).getBoundingClientRect()
-    await expect(label.right).toBeLessThanOrEqual(tile.right)
+    const panel = canvasElement
+      .querySelector('[aria-hidden="true"]')!
+      .getBoundingClientRect()
+    await expect(label.right).toBeLessThanOrEqual(panel.left)
+    await expect(panel.right).toBeLessThanOrEqual(tile.right)
   },
 }
