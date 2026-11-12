@@ -28,6 +28,14 @@ describe('createIcon', () => {
       .toBeVisible()
   })
 
+  it('is an image named by aria-label when given one instead of a title', async () => {
+    const screen = await render(<SquareIcon aria-label="Delete card" />)
+
+    await expect
+      .element(screen.getByRole('img', { name: 'Delete card' }))
+      .toBeVisible()
+  })
+
   it('treats an empty title as decorative', async () => {
     const screen = await render(<SquareIcon title="" data-testid="icon" />)
 
