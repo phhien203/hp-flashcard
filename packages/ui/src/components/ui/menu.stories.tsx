@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, screen, waitFor } from 'storybook/test'
 
-import { createIcon } from '../icons/create-icon.js'
+import { IconDelete } from '../icons/icon-delete.js'
+import { IconEdit } from '../icons/icon-edit.js'
+import { IconKebab } from '../icons/icon-kebab.js'
 import { Button } from './button.js'
 import {
   Menu,
@@ -11,27 +13,6 @@ import {
   MenuTrigger,
   type MenuProps,
 } from './menu.js'
-
-// Story-only icons: the app supplies its own.
-const IconKebab = createIcon(
-  'IconKebab',
-  '0 0 16 16',
-  <>
-    <circle cx="8" cy="3" r="1.5" />
-    <circle cx="8" cy="8" r="1.5" />
-    <circle cx="8" cy="13" r="1.5" />
-  </>,
-)
-const IconEdit = createIcon(
-  'IconEdit',
-  '0 0 16 16',
-  <path d="M11.3 1.3a1 1 0 0 1 1.4 0l2 2a1 1 0 0 1 0 1.4L5.4 14H2v-3.4zM3.5 11.6v.9h.9l7-7-.9-.9z" />,
-)
-const IconDelete = createIcon(
-  'IconDelete',
-  '0 0 16 16',
-  <path d="M6 1h4l.5 1H14v1.5H2V2h3.5zM3 5h10l-.8 9.1a1 1 0 0 1-1 .9H4.8a1 1 0 0 1-1-.9zm1.6 1.5.6 7h5.6l.6-7z" />,
-)
 
 const CATEGORIES = ['Biology', 'Chemistry', 'History', 'Physics'] as const
 
