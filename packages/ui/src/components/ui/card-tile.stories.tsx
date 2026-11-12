@@ -83,6 +83,23 @@ export const Actions: Story = {
       await screen.findByRole('menuitem', { name: 'Delete' }),
     )
     await expect(args.onDelete).toHaveBeenCalledOnce()
+    // Let the menu finish closing: axe flags its focus guards mid-exit.
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  },
+}
+
+/**
+ * The actions menu left open, so axe checks the popup and the open trigger
+ * in both themes.
+ */
+export const MenuOpen: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole('button', { name: 'Card actions' })
+    await userEvent.click(trigger)
+    await expect(await screen.findByRole('menu')).toBeVisible()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible()
+    await expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeVisible()
   },
 }
 
