@@ -1,4 +1,4 @@
-import { cva } from 'class-variance-authority'
+import { cva, type VariantProps } from 'class-variance-authority'
 import { useId, type ComponentProps, type ReactNode } from 'react'
 
 import { cn } from '../../lib/utils.js'
@@ -18,7 +18,7 @@ const accentPanel = cva(
 )
 
 /** The Figma color of a StatTile's icon panel. */
-type StatTileAccent = 'blue-400' | 'teal-400' | 'pink-500' | 'pink-400'
+type StatTileAccent = NonNullable<VariantProps<typeof accentPanel>['accent']>
 
 interface StatTileProps extends Omit<ComponentProps<'div'>, 'children'> {
   /** What the number counts, for example "Total Cards". Names the tile. */
