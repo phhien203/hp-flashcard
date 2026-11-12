@@ -14,6 +14,18 @@ export {
   type FieldProps,
 } from './components/ui/field.js'
 export { Input, type InputProps } from './components/ui/input.js'
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  type MenuCheckboxItemProps,
+  type MenuContentProps,
+  type MenuItemProps,
+  type MenuProps,
+  type MenuTriggerProps,
+} from './components/ui/menu.js'
 export { Progress, type ProgressProps } from './components/ui/progress.js'
 export { Textarea, type TextareaProps } from './components/ui/textarea.js'
 export { cn } from './lib/utils.js'
