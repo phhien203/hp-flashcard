@@ -33,6 +33,7 @@
     },
     "./styles.css": "./dist/styles.css",
     "./theme.css": "./dist/styles/theme.css",
+    "./fonts.css": "./dist/styles/fonts.css",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -41,13 +42,14 @@
   },
   "scripts": {
     "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json && pnpm build:css",
-    "build:css": "tailwindcss -i src/styles/styles.css -o dist/styles.css --minify && mkdir -p dist/styles && cp src/styles/theme.css dist/styles/theme.css",
-    "check:package": "publint --strict && attw --pack . --profile esm-only --exclude-entrypoints ./styles.css ./theme.css",
+    "build:css": "tailwindcss -i src/styles/styles.css -o dist/styles.css --minify && node scripts/copy-fonts.ts && mkdir -p dist/styles && cp src/styles/theme.css src/styles/fonts.css dist/styles/",
+    "check:package": "publint --strict && attw --pack . --profile esm-only --exclude-entrypoints ./styles.css ./theme.css ./fonts.css && node scripts/check-styles.ts",
     "typecheck": "tsc --noEmit",
     "shadcn": "shadcn"
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
+    "@fontsource/poppins": "catalog:",
     "class-variance-authority": "catalog:",
     "cn": "catalog:"
   },

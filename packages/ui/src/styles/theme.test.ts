@@ -12,6 +12,9 @@ const tailwindFiles: Record<string, string> = {
   './theme.css': tailwindTheme,
   './preflight.css': tailwindPreflight,
   './utilities.css': tailwindUtilities,
+  // theme.css imports the Poppins @font-face rules. They don't affect the
+  // tokens under test, so stub them rather than resolve @fontsource here.
+  './fonts.css': '',
 }
 
 // Compile theme.css the way a consumer's Tailwind v4 build does, and return

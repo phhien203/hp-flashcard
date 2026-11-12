@@ -27,6 +27,24 @@ import '@hp-flashcard/ui/styles.css'
 
 `styles.css` includes Tailwind's preflight (base reset).
 
+Both entries load the **Poppins** font (weights 400, 500, 600 and 700, self-hosted through [`@fontsource/poppins`](https://fontsource.org/fonts/poppins)), so components render in Poppins with no extra setup. The `@font-face` rules on their own are also available as `@hp-flashcard/ui/fonts.css`.
+
+## Typography
+
+Each text preset from the design is a single utility that sets font size, line height, weight and letter spacing together:
+
+| Utility                  | Weight   | Size                                 | Line height | Letter spacing |
+| ------------------------ | -------- | ------------------------------------ | ----------- | -------------- |
+| `text-preset-1`          | Bold     | 24px, 32px from `md`, 40px from `lg` | 120%        | 0              |
+| `text-preset-2`          | SemiBold | 24px                                 | 120%        | 0              |
+| `text-preset-3`          | SemiBold | 20px                                 | 120%        | 0              |
+| `text-preset-4-semibold` | SemiBold | 16px                                 | 120%        | 0              |
+| `text-preset-4-medium`   | Medium   | 16px                                 | 120%        | 0              |
+| `text-preset-4-regular`  | Regular  | 16px                                 | 140%        | 0              |
+| `text-preset-5-medium`   | Medium   | 14px                                 | 140%        | 0              |
+| `text-preset-5-regular`  | Regular  | 14px                                 | 140%        | 0              |
+| `text-preset-6`          | Medium   | 12px                                 | 130%        | -3%            |
+
 ## Usage
 
 ```tsx

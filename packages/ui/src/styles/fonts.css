@@ -1,0 +1,13 @@
+/*
+ * Poppins, the design system's typeface, in the four weights the Figma text
+ * presets use (400, 500, 600, 700). Self-hosted via @fontsource/poppins, a
+ * runtime dependency of @hp-flashcard/ui.
+ *
+ * Both entries already include it: `styles.css` (with the font files copied
+ * into the package) and `theme.css` (resolved by the consumer's bundler).
+ * Shipped on its own as `@hp-flashcard/ui/fonts.css`.
+ */
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';

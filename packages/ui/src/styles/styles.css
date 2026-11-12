@@ -9,3 +9,11 @@
  */
 @import 'tailwindcss' source(none);
 @import './theme.css';
+
+/*
+ * Token utilities apps use directly, so they ship even when no component
+ * uses them yet. Checked after the build by scripts/check-styles.ts.
+ * Kept on one line: Tailwind can't parse a wrapped @source inline().
+ */
+/* prettier-ignore */
+@source inline('text-preset-{1,2,3,4-semibold,4-medium,4-regular,5-medium,5-regular,6}');
