@@ -151,6 +151,36 @@ const ROLES: {
     dark: 'yellow-500',
   },
   {
+    name: 'stat-blue',
+    className: 'bg-stat-blue',
+    light: 'blue-400',
+    dark: 'blue-400',
+  },
+  {
+    name: 'stat-teal',
+    className: 'bg-stat-teal',
+    light: 'teal-400',
+    dark: 'teal-400',
+  },
+  {
+    name: 'stat-pink',
+    className: 'bg-stat-pink',
+    light: 'pink-500',
+    dark: 'pink-500',
+  },
+  {
+    name: 'stat-pink-light',
+    className: 'bg-stat-pink-light',
+    light: 'pink-400',
+    dark: 'pink-400',
+  },
+  {
+    name: 'stat-foreground',
+    className: 'bg-stat-foreground',
+    light: 'neutral-900',
+    dark: 'neutral-900',
+  },
+  {
     name: 'destructive',
     className: 'bg-destructive',
     light: 'pink-700',

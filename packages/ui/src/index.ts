@@ -72,6 +72,11 @@ export {
   type SegmentedNavItem,
   type SegmentedNavProps,
 } from './components/ui/segmented-nav.js'
+export {
+  StatTile,
+  type StatTileAccent,
+  type StatTileProps,
+} from './components/ui/stat-tile.js'
 export { Textarea, type TextareaProps } from './components/ui/textarea.js'
 export {
   ToastProvider,
