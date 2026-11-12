@@ -19,7 +19,7 @@ function FlashcardPattern() {
       aria-hidden="true"
       focusable="false"
       data-slot="flashcard-pattern"
-      className="pointer-events-none absolute inset-0 size-full text-neutral-900 opacity-10"
+      className="pointer-events-none absolute inset-0 size-full text-flashcard-foreground opacity-10"
     >
       <defs>
         <pattern id={id} width="32" height="32" patternUnits="userSpaceOnUse">
@@ -53,7 +53,7 @@ function Sparkle({ className }: { className: string }) {
     >
       <path
         d={SPARKLE}
-        className="fill-yellow-500 stroke-neutral-900"
+        className="fill-flashcard-sparkle stroke-flashcard-foreground"
         strokeWidth="1.5"
         strokeLinejoin="round"
       />

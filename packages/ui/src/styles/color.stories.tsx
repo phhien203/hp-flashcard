@@ -127,6 +127,30 @@ const ROLES: {
     dark: 'neutral-900',
   },
   {
+    name: 'flashcard-question',
+    className: 'bg-flashcard-question',
+    light: 'pink-400',
+    dark: 'pink-400',
+  },
+  {
+    name: 'flashcard-answer',
+    className: 'bg-flashcard-answer',
+    light: 'blue-400',
+    dark: 'blue-400',
+  },
+  {
+    name: 'flashcard-foreground',
+    className: 'bg-flashcard-foreground',
+    light: 'neutral-900',
+    dark: 'neutral-900',
+  },
+  {
+    name: 'flashcard-sparkle',
+    className: 'bg-flashcard-sparkle',
+    light: 'yellow-500',
+    dark: 'yellow-500',
+  },
+  {
     name: 'destructive',
     className: 'bg-destructive',
     light: 'pink-700',

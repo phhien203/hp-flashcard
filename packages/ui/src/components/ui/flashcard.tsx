@@ -30,7 +30,7 @@ interface FlashcardProps extends Omit<ComponentProps<'div'>, 'children'> {
 
 // Keyboard focus on the flip button shows on the visible face, in the ring color.
 const faceClassName =
-  'relative col-start-1 row-start-1 flex flex-col items-center justify-between gap-300 overflow-hidden rounded-24 border border-border p-300 text-center text-neutral-900 shadow-hover transition-shadow backface-hidden group-has-focus-visible:border-ring group-has-focus-visible:shadow-ring md:p-400'
+  'relative col-start-1 row-start-1 flex flex-col items-center justify-between gap-300 overflow-hidden rounded-24 border border-border p-300 text-center text-flashcard-foreground shadow-hover transition-shadow backface-hidden group-has-focus-visible:border-ring group-has-focus-visible:shadow-ring md:p-400'
 
 function FlashcardFooter({ progress }: { progress: number }) {
   return (
@@ -92,7 +92,7 @@ function Flashcard({
         <div
           data-slot="flashcard-front"
           aria-hidden={flipped || undefined}
-          className={cn(faceClassName, 'bg-pink-400')}
+          className={cn(faceClassName, 'bg-flashcard-question')}
         >
           <FlashcardPattern />
           <FlashcardSparkles />
@@ -109,7 +109,7 @@ function Flashcard({
         <div
           data-slot="flashcard-back"
           aria-hidden={!flipped || undefined}
-          className={cn(faceClassName, 'rotate-y-180 bg-blue-400')}
+          className={cn(faceClassName, 'rotate-y-180 bg-flashcard-answer')}
         >
           <FlashcardPattern />
           <FlashcardSparkles />
