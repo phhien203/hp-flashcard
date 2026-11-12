@@ -25,10 +25,10 @@ const Plus = createIcon(
 const settle = (element: Element) =>
   Promise.all(element.getAnimations().map(({ finished }) => finished))
 
-/** A theme token as the browser resolves it, for comparing with styles. */
-const resolved = (name: string) => {
+/** A CSS color as the browser resolves it, for comparing with styles. */
+const resolved = (css: string) => {
   const probe = document.createElement('div')
-  probe.style.color = `var(${name})`
+  probe.style.color = css
   document.body.append(probe)
   const color = getComputedStyle(probe).color
   probe.remove()
@@ -75,8 +75,12 @@ export const KeyboardFocus: Story = {
     await userEvent.tab()
     await expect(button).toHaveFocus()
     await settle(button)
-    await expect(getComputedStyle(button).borderTopColor).toBe(
-      resolved('--ring'),
+    const style = getComputedStyle(button)
+    await expect(style.borderTopColor).toBe(resolved('var(--ring)'))
+    // Tailwind's shadow-color utilities mix the color in oklab, so the
+    // shadow's color serializes in that space.
+    await expect(style.boxShadow).toContain(
+      resolved('color-mix(in oklab, var(--ring) 100%, transparent)'),
     )
   },
 }
