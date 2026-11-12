@@ -1,0 +1,9 @@
+/*
+ * The design-system styles, plus utilities that only tests use. Test files
+ * aren't scanned, so a class a test asserts on must be listed here unless a
+ * component already generates it.
+ */
+@import '../styles/styles.css';
+
+/* prettier-ignore */
+@source inline('size-300');
