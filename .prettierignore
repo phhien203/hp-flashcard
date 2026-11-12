@@ -5,3 +5,7 @@ coverage/
 .changeset/*.md
 !.changeset/README.md
 **/CHANGELOG.md
+
+# Vendored agent skills (managed by `npx skills`)
+.agents/
+skills-lock.json
