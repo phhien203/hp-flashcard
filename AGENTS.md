@@ -42,6 +42,7 @@ shadcn is a starting point: generated code is ours to reshape to the Figma desig
 
 - Changes to `@hp-flashcard/ui` need a changeset (`pnpm changeset`) with a consumer-facing summary. The process is in `RELEASING.md`.
 - TypeScript stays on 6.x (Renovate is capped at `<7`). Moving to TS 7 is a deliberate decision.
+- **Rebase-only PRs:** update PR branches by rebasing onto `origin/main`, resolving conflicts during replay; never merge `main` into a PR branch. Push rewritten history with `--force-with-lease`.
 
 ## Deferred (not set up yet)
 
