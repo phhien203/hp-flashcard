@@ -78,6 +78,7 @@ describe('CardTile', () => {
     expect(onEdit).toHaveBeenCalledOnce()
     expect(onDelete).not.toHaveBeenCalled()
     await expect.element(trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
   })
 
   it('calls onDelete when Delete is picked from the actions menu', async () => {
@@ -90,6 +91,7 @@ describe('CardTile', () => {
 
     expect(onDelete).toHaveBeenCalledOnce()
     expect(onEdit).not.toHaveBeenCalled()
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
   })
 
   it('opens the menu and picks Delete from the keyboard', async () => {
@@ -118,6 +120,7 @@ describe('CardTile', () => {
 
     expect(onDelete).toHaveBeenCalledOnce()
     await expect.element(trigger).toHaveFocus()
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
   })
 
   it('closes the menu on Escape without calling either action', async () => {
@@ -131,6 +134,7 @@ describe('CardTile', () => {
     await userEvent.keyboard('{Escape}')
 
     await expect.element(trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
     expect(onEdit).not.toHaveBeenCalled()
     expect(onDelete).not.toHaveBeenCalled()
   })
