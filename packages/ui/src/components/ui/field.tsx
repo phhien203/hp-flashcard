@@ -45,7 +45,8 @@ type FieldErrorProps = FieldPrimitive.Error.Props
  * and becomes the control's accessible description.
  *
  * Without children it shows the browser's validation message.
- * `text-destructive` keeps AA contrast on white (card) surfaces only.
+ * Place it on `bg-card`: in light, `text-destructive` keeps AA contrast
+ * on that white surface but not on `bg-background`.
  */
 function FieldError({ className, ...props }: FieldErrorProps) {
   return (
