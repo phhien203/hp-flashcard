@@ -6,3 +6,9 @@
  */
 @import 'tailwindcss';
 @import '../../../packages/ui/src/styles/theme.css';
+
+/*
+ * theme.css keeps stories out of the shipped CSS. Storybook still needs the
+ * classes used in stories' own markup (layout wrappers, Foundations swatches).
+ */
+@source '../../../packages/ui/src/**/*.stories.tsx';

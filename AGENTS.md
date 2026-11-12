@@ -26,6 +26,7 @@ shadcn is a starting point: generated code is ours to reshape to the Figma desig
 
 - `src/styles/theme.css` is the **token source**: CSS variables plus `@theme inline`. It ships as `@hp-flashcard/ui/theme.css` for consumers on Tailwind v4. Its `@source "../"` resolves relative to the file, so it scans `src/` here and `dist/` once published. Keep that line.
 - `src/styles/styles.css` is the entry the Tailwind CLI compiles into the precompiled `@hp-flashcard/ui/styles.css`.
+- **Spacing, radius and named sizes come from Figma**: `p-100` (8px), `rounded-8`, `max-w-dialog`. Tailwind's spacing multiplier and its radius and container scales are cleared, so `p-2`, `rounded-lg` and `max-w-md` generate nothing. In `packages/ui/src`, ESLint (`better-tailwindcss`) rejects arbitrary values (`p-[13px]`) and unknown classes. When a component needs an off-scale size, add a named token to `theme.css` and to the `cn` config in `src/lib/utils.ts`.
 - Colors come from Figma in two layers: **primitives** named as in Figma (`--neutral-900`, `--yellow-500`, …) and shadcn-named **semantic roles** (`--background`, `--primary`, …) that point at them, remapped under `.dark`. Tailwind's default palette and `shadow-*` scale are cleared, so only Figma colors and `shadow-rest`/`shadow-hover` exist. Components use roles. Roles reference primitives directly, never other roles: an alias on `:root` would ignore a nested `.dark`.
 - Focus styling goes on `focus-visible:` only and uses `ring`.
 

@@ -60,7 +60,7 @@ export const Disabled: Story = {
 
 export const Sizes: Story = {
   render: (args) => (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-100">
       <Button {...args} size="xs">
         Extra small
       </Button>

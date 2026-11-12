@@ -11,6 +11,7 @@
  */
 @source '../';
 @source not '../**/*.stories.tsx';
+@source not '../**/*.test.ts';
 @source not '../**/*.test.tsx';
 
 /*
@@ -27,6 +28,60 @@
 @source inline('{,hover:}shadow-{rest,hover} focus-visible:shadow-ring focus-visible:border-ring');
 
 @custom-variant dark (&:is(.dark *));
+
+/*
+ * Spacing, radius and size tokens from the Figma file (`spacing/*` and
+ * `corner-radius/*`). Developers pick from these names only: Tailwind's
+ * spacing multiplier and its radius and container scales are cleared, so
+ * `p-7`, `p-2.5`, `rounded-lg` and `max-w-md` generate nothing. Static
+ * keywords and fractions (`w-full`, `w-1/2`, `h-px`) don't use the theme and
+ * keep working. Lint rejects arbitrary values (`p-[13px]`) and unknown classes.
+ */
+@theme {
+  /* spacing/*: 100 = 8px. Drives p-*, m-*, gap-*, w-*, h-*, size-*, inset-* … */
+  --spacing-*: initial;
+  --spacing-0: 0px;
+  --spacing-25: 2px;
+  --spacing-50: 4px;
+  --spacing-75: 6px;
+  --spacing-100: 8px;
+  --spacing-125: 10px;
+  --spacing-150: 12px;
+  --spacing-200: 16px;
+  --spacing-250: 20px;
+  --spacing-300: 24px;
+  --spacing-400: 32px;
+  --spacing-500: 40px;
+  --spacing-600: 48px;
+  --spacing-800: 64px;
+  --spacing-1000: 80px;
+  --spacing-1200: 96px;
+  --spacing-1400: 112px;
+  --spacing-1600: 128px;
+  /* 140px, not 144px: kept as Figma defines it. */
+  --spacing-1800: 140px;
+
+  /* corner-radius/*. Figma's radius-xs is unused and deliberately left out. */
+  --radius-*: initial;
+  --radius-0: 0px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-24: 24px;
+  --radius-full: 999px;
+
+  /*
+   * Named sizes for widths off the spacing scale (w-*, max-w-*, min-w-*).
+   * Add one here when a component needs a size the scale doesn't have.
+   */
+  --container-*: initial;
+  --container-dialog: 600px;
+  --container-page: 1240px;
+}
 
 @theme inline {
   /* Only Figma colors exist: Tailwind's default palette is cleared. */
@@ -75,14 +130,6 @@
   --shadow-*: initial;
   --shadow-rest: 2px 2px 0 0 var(--shadow-color);
   --shadow-hover: 4px 4px 0 0 var(--shadow-color);
-
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
@@ -127,7 +174,6 @@
   --input: var(--neutral-900);
   --ring: var(--blue-600);
   --shadow-color: var(--neutral-900);
-  --radius: 0.625rem;
 }
 
 .dark {
