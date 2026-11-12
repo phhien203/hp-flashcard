@@ -51,6 +51,10 @@ async function styleOf(className: string) {
 
 const px = (value: string) => Number.parseFloat(value)
 
+// FontFace.weight may serialize 400 and 700 as keywords, depending on engine.
+const numericWeight = (weight = '') =>
+  ({ normal: '400', bold: '700' })[weight] ?? weight
+
 describe('text presets', () => {
   afterEach(async () => {
     await page.viewport(414, 896)
@@ -109,7 +113,7 @@ describe('Poppins', () => {
       const [face] = await document.fonts.load(`${weight} 16px Poppins`, 'Aa')
 
       expect(face?.family.replaceAll('"', '')).toBe('Poppins')
-      expect(face?.weight).toBe(weight)
+      expect(numericWeight(face?.weight)).toBe(weight)
       expect(face?.status).toBe('loaded')
     },
   )
