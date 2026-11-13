@@ -8,13 +8,13 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { ApiError } from '../api/client.js'
 import type { Card, Category, CategoryList } from '../api/types.js'
 import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
 import {
   fetchCard,
+  isNotFound,
   queryKeys,
   useCardPages,
   useCategories,
@@ -111,10 +111,9 @@ export function AllCardsPage({
       await fetchCard(queryClient, cardId)
     } catch (error) {
       toast.add({
-        title:
-          error instanceof ApiError && error.status === 404
-            ? 'That card no longer exists.'
-            : 'The card could not be shown. Please try again.',
+        title: isNotFound(error)
+          ? 'That card no longer exists.'
+          : 'The card could not be shown. Please try again.',
         priority: 'high',
       })
       return
