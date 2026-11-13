@@ -4,6 +4,7 @@ storybook-static/
 coverage/
 *.tsbuildinfo
 .vitest-attachments/
+.vitest/
 __screenshots__/
 .DS_Store
 *.log
