@@ -22,7 +22,7 @@ export interface DeleteCardDialogProps {
    * `deleted` when this request deleted it, `missing` when the backend no
    * longer had it.
    */
-  onDeleted: (outcome: 'deleted' | 'missing') => void
+  onDeleted: (outcome: DeleteOutcome) => void
   /** Called when the dialog has finished closing, deleted or not. */
   onClosed: () => void
   /**
@@ -31,6 +31,9 @@ export interface DeleteCardDialogProps {
    */
   returnFocusTo: (deleted: boolean) => HTMLElement | null
 }
+
+/** How a deletion ended: this request deleted the Card, or it was gone. */
+export type DeleteOutcome = 'deleted' | 'missing'
 
 /**
  * Figma's "Delete this card?" confirmation. Cancel and Escape keep the
@@ -49,7 +52,7 @@ export function DeleteCardDialog({
   const [error, setError] = useState<string>()
   const deletion = useDeleteCard()
 
-  const finish = (outcome: 'deleted' | 'missing') => {
+  const finish = (outcome: DeleteOutcome) => {
     setGone(true)
     setOpen(false)
     onDeleted(outcome)
