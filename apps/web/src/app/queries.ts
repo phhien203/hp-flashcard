@@ -42,9 +42,13 @@ export const queryKeys = {
   statistics: ['cards', 'statistics'] as const,
 }
 
+/** The `category` parameter: repeated, or absent for every Category. */
+const categoryQuery = (categoryIds: readonly string[]) =>
+  categoryIds.length > 0 ? [...categoryIds] : undefined
+
 /** The query parameters both listings send for `filters`. */
 const listQuery = ({ categoryIds, hideMastered, seed }: CardFilters) => ({
-  category: categoryIds.length > 0 ? [...categoryIds] : undefined,
+  category: categoryQuery(categoryIds),
   hideMastered: hideMastered || undefined,
   seed,
 })
@@ -109,10 +113,7 @@ export function useCardStatistics(categoryIds: readonly string[]) {
   return useQuery({
     queryKey: [...queryKeys.statistics, { categoryIds }],
     queryFn: ({ signal }) =>
-      api.getCardStatistics(
-        { category: categoryIds.length > 0 ? [...categoryIds] : undefined },
-        signal,
-      ),
+      api.getCardStatistics({ category: categoryQuery(categoryIds) }, signal),
   })
 }
 

@@ -49,6 +49,15 @@ export function toSearchParams(
   return params
 }
 
+/** `path` with `query` appended, or bare when every parameter is unset. */
+const withQuery = (
+  path: string,
+  query: Parameters<typeof toSearchParams>[0],
+) => {
+  const search = toSearchParams(query).toString()
+  return search ? `${path}?${search}` : path
+}
+
 /**
  * A typed client for the API in api/openapi.yaml, on native `fetch`. It
  * neither knows nor cares whether MSW or a real server answers.
@@ -81,12 +90,8 @@ export function createApiClient(baseUrl = '') {
   }
 
   return {
-    listCards: (query: ListCardsQuery, signal?: AbortSignal) => {
-      const search = toSearchParams(query).toString()
-      return request<CardPage>(`/api/cards${search ? `?${search}` : ''}`, {
-        signal,
-      })
-    },
+    listCards: (query: ListCardsQuery, signal?: AbortSignal) =>
+      request<CardPage>(withQuery('/api/cards', query), { signal }),
     getCard: (cardId: string, signal?: AbortSignal) =>
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, { signal }),
     createCard: (input: CardInput) =>
@@ -96,18 +101,15 @@ export function createApiClient(baseUrl = '') {
         method: 'PATCH',
         body: patch,
       }),
-    setCardProgress: (cardId: string, progress: number) =>
+    setCardProgress: (cardId: string, progress: ProgressInput['progress']) =>
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}/progress`, {
         method: 'PUT',
         body: { progress } satisfies ProgressInput,
       }),
-    getCardStatistics: (query: CardStatisticsQuery, signal?: AbortSignal) => {
-      const search = toSearchParams(query).toString()
-      return request<CardStatistics>(
-        `/api/cards/statistics${search ? `?${search}` : ''}`,
-        { signal },
-      )
-    },
+    getCardStatistics: (query: CardStatisticsQuery, signal?: AbortSignal) =>
+      request<CardStatistics>(withQuery('/api/cards/statistics', query), {
+        signal,
+      }),
     deleteCard: (cardId: string) =>
       request<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'DELETE',
