@@ -8,6 +8,7 @@ import readme from '../README.md?raw'
 // import and copy in step with the package and the repo's own lint rule.
 
 const LINT_PATTERN = /pattern: String\.raw`([^`]+)`/
+const readmePattern = readme.match(LINT_PATTERN)?.[1]
 
 describe('README', () => {
   it('only names subpaths the package exports', () => {
@@ -25,13 +26,15 @@ describe('README', () => {
   })
 
   it("copies the repo's arbitrary-value lint pattern", () => {
-    const fromReadme = readme.match(LINT_PATTERN)?.[1]
-    expect(fromReadme).toBeDefined()
-    expect(fromReadme).toBe(eslintConfig.match(LINT_PATTERN)?.[1])
+    expect(readmePattern).toBeDefined()
+    expect(readmePattern).toBe(eslintConfig.match(LINT_PATTERN)?.[1])
   })
 
   it('bans arbitrary values but not tokens or arbitrary variants', () => {
-    const pattern = new RegExp(readme.match(LINT_PATTERN)?.[1] ?? '$^')
+    if (readmePattern === undefined) {
+      throw new Error('README has no arbitrary-value lint pattern')
+    }
+    const pattern = new RegExp(readmePattern)
     for (const banned of [
       'p-[13px]',
       'bg-(--x)',
