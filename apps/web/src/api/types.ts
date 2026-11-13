@@ -10,6 +10,10 @@ export type CardPage = Schemas['CardPage']
 export type Category = Schemas['Category']
 /** The `/api/categories` response. */
 export type CategoryList = Schemas['CategoryList']
+/** The body of `POST /api/cards`. */
+export type CardInput = Schemas['CardInput']
+/** The body of `PATCH /api/cards/{cardId}`. */
+export type CardPatch = Schemas['CardPatch']
 /** The API's error body. */
 export type ApiErrorBody = Schemas['Error']
 /** The query parameters of `GET /api/cards`. */

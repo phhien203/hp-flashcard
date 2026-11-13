@@ -1,7 +1,9 @@
 import type {
   ApiErrorBody,
   Card,
+  CardInput,
   CardPage,
+  CardPatch,
   CategoryList,
   ListCardsQuery,
 } from './types.js'
@@ -49,9 +51,21 @@ export function toSearchParams(
  * neither knows nor cares whether MSW or a real server answers.
  */
 export function createApiClient(baseUrl = '') {
-  async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+  async function request<T>(
+    path: string,
+    {
+      method = 'GET',
+      body,
+      signal,
+    }: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  ): Promise<T> {
     const response = await fetch(`${baseUrl}${path}`, {
-      headers: { Accept: 'application/json' },
+      method,
+      headers: {
+        Accept: 'application/json',
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     })
     if (!response.ok) {
@@ -64,15 +78,21 @@ export function createApiClient(baseUrl = '') {
   return {
     listCards: (query: ListCardsQuery, signal?: AbortSignal) => {
       const search = toSearchParams(query).toString()
-      return request<CardPage>(
-        `/api/cards${search ? `?${search}` : ''}`,
+      return request<CardPage>(`/api/cards${search ? `?${search}` : ''}`, {
         signal,
-      )
+      })
     },
     getCard: (cardId: string, signal?: AbortSignal) =>
-      request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, signal),
+      request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, { signal }),
+    createCard: (input: CardInput) =>
+      request<Card>('/api/cards', { method: 'POST', body: input }),
+    updateCard: (cardId: string, patch: CardPatch) =>
+      request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
+        method: 'PATCH',
+        body: patch,
+      }),
     listCategories: (signal?: AbortSignal) =>
-      request<CategoryList>('/api/categories', signal),
+      request<CategoryList>('/api/categories', { signal }),
   }
 }
 

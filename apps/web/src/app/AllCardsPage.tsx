@@ -1,8 +1,24 @@
-import { Button, CardTile, CategoryFilter, Checkbox } from '@hp-flashcard/ui'
-import { useState, type ReactNode } from 'react'
+import {
+  Button,
+  CardTile,
+  CategoryFilter,
+  Checkbox,
+  useToast,
+} from '@hp-flashcard/ui'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-import type { Category } from '../api/types.js'
-import { useCardPages, useCategories, type CardFilters } from './queries.js'
+import { ApiError } from '../api/client.js'
+import type { Card, Category, CategoryList } from '../api/types.js'
+import { CreateCardForm } from './CreateCardForm.js'
+import { EditCardDialog } from './EditCardDialog.js'
+import {
+  fetchCard,
+  queryKeys,
+  useCardPages,
+  useCategories,
+  type CardFilters,
+} from './queries.js'
 
 const INITIAL_FILTERS: CardFilters = {
   categoryIds: [],
@@ -12,25 +28,128 @@ const INITIAL_FILTERS: CardFilters = {
 
 export interface AllCardsPageProps {
   createShuffleSeed: () => number
+  /** Called when the create form starts or stops holding unsaved input. */
+  onHasDraftChange: (hasDraft: boolean) => void
 }
 
 /**
- * Browse the Card collection: filter it by Category and mastery, Shuffle
- * it, and load it 12 Cards at a time. The backend does the filtering,
- * shuffling and paging.
+ * Create Cards, and browse the collection: filter it by Category and
+ * mastery, Shuffle it, and load it 12 Cards at a time. The backend does the
+ * filtering, shuffling and paging.
  */
-export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
-  const [filters, setFilters] = useState(INITIAL_FILTERS)
+export function AllCardsPage({
+  createShuffleSeed,
+  onHasDraftChange,
+}: AllCardsPageProps) {
+  const [selectedFilters, setFilters] = useState(INITIAL_FILTERS)
+  const [editing, setEditing] = useState<Card>()
+  const [revealing, setRevealing] = useState<string>()
   const categories = useCategories()
+  // A selected Category that no longer exists (its last Card moved away)
+  // drops out of the selection; none left means every Category.
+  const filters = withExistingCategories(selectedFilters, categories.data)
   const cards = useCardPages(filters)
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  const listRef = useRef<HTMLUListElement>(null)
 
   const loaded = cards.data?.pages.flatMap((page) => page.items) ?? []
   const total = cards.data?.pages[0]?.total ?? 0
   const filtered = filters.categoryIds.length > 0 || filters.hideMastered
 
+  const cardElement = (cardId: string) =>
+    listRef.current?.querySelector<HTMLElement>(
+      `[data-card-id="${CSS.escape(cardId)}"]`,
+    ) ?? null
+
+  // Toasts offering "Show card" act on this page: close them when it goes.
+  const showCardToasts = useRef(new Set<string>())
+  useEffect(() => {
+    const ids = showCardToasts.current
+    return () => ids.forEach((id) => toast.close(id))
+  }, [toast])
+
+  // The latest filters, for code that runs once a save has finished.
+  const filtersRef = useRef(filters)
+  useEffect(() => {
+    filtersRef.current = filters
+  })
+
+  /** Confirms a save, and offers to show the Card if the filters hide it. */
+  const confirmSaved = (card: Card, verb: 'created' | 'updated') => {
+    const active = withExistingCategories(
+      filtersRef.current,
+      queryClient.getQueryData<CategoryList>(queryKeys.categories),
+    )
+    if (matches(card, active)) {
+      toast.add({ title: `Card ${verb} successfully.` })
+      return
+    }
+    const id = toast.add({
+      title: `Card ${verb} successfully. Your filters hide it.`,
+      // It waits for the user, who may want to act on it.
+      timeout: 0,
+      action: { label: 'Show card', onClick: () => void showCard(card.id) },
+    })
+    showCardToasts.current.add(id)
+  }
+
+  /** Clears the filters, then loads pages until the Card is on screen. */
+  const showCard = async (cardId: string) => {
+    try {
+      await fetchCard(queryClient, cardId)
+    } catch (error) {
+      toast.add({
+        title:
+          error instanceof ApiError && error.status === 404
+            ? 'That card no longer exists.'
+            : 'The card could not be shown. Please try again.',
+        priority: 'high',
+      })
+      return
+    }
+    // Shuffle isn't a filter: a shuffled order stays shuffled.
+    setFilters((f) => ({ ...INITIAL_FILTERS, seed: f.seed }))
+    setRevealing(cardId)
+  }
+
+  // Revealing a Card: load the next page until the Card is among the
+  // loaded ones, then bring it into view and focus it.
+  const revealedCard =
+    revealing !== undefined && loaded.some((card) => card.id === revealing)
+      ? revealing
+      : undefined
+  const needsNextPage =
+    revealing !== undefined &&
+    revealedCard === undefined &&
+    !cards.isFetching &&
+    cards.hasNextPage &&
+    !cards.isFetchNextPageError
+  const { fetchNextPage } = cards
+  useEffect(() => {
+    if (needsNextPage) void fetchNextPage()
+  }, [needsNextPage, fetchNextPage])
+  useEffect(() => {
+    if (revealedCard === undefined) return
+    const element = cardElement(revealedCard)
+    element?.scrollIntoView({ block: 'center' })
+    element?.focus({ preventScroll: true })
+  }, [revealedCard])
+
+  /** Changes the filters the user picks, ending any "Show card". */
+  const changeFilters = (update: (filters: CardFilters) => CardFilters) => {
+    setRevealing(undefined)
+    setFilters(update)
+  }
+
   return (
     <main className="flex flex-col gap-300">
       <h1 className="sr-only">All Cards</h1>
+
+      <CreateCardForm
+        onHasDraftChange={onHasDraftChange}
+        onCreated={(card) => confirmSaved(card, 'created')}
+      />
 
       <div className="flex flex-col gap-200 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-200">
@@ -38,7 +157,7 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
             categories={categories.data?.items ?? []}
             value={namesOf(categories.data?.items, filters.categoryIds)}
             onValueChange={(names) =>
-              setFilters((f) => ({
+              changeFilters((f) => ({
                 ...f,
                 categoryIds: idsOf(categories.data?.items, names),
               }))
@@ -48,7 +167,7 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
             <Checkbox
               checked={filters.hideMastered}
               onCheckedChange={(hideMastered) =>
-                setFilters((f) => ({ ...f, hideMastered }))
+                changeFilters((f) => ({ ...f, hideMastered }))
               }
             />
             Hide Mastered
@@ -58,7 +177,7 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
           variant="outline"
           className="self-start sm:self-auto"
           onClick={() =>
-            setFilters((f) => ({ ...f, seed: createShuffleSeed() }))
+            changeFilters((f) => ({ ...f, seed: createShuffleSeed() }))
           }
         >
           Shuffle
@@ -94,7 +213,7 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
             <Button
               variant="outline"
               onClick={() =>
-                setFilters((f) => ({ ...INITIAL_FILTERS, seed: f.seed }))
+                changeFilters((f) => ({ ...INITIAL_FILTERS, seed: f.seed }))
               }
             >
               Clear filters
@@ -109,17 +228,29 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
       ) : (
         <>
           <ul
+            ref={listRef}
             aria-label="Cards"
             className="grid grid-cols-1 gap-200 md:grid-cols-2 md:gap-300 lg:grid-cols-3 xl:grid-cols-4"
           >
             {loaded.map((card) => (
-              <li key={card.id} className="flex">
+              <li
+                key={card.id}
+                data-card-id={card.id}
+                data-revealed={revealedCard === card.id ? '' : undefined}
+                // Focusable from script only: "Show card" moves focus here.
+                tabIndex={-1}
+                onBlur={() => {
+                  if (revealedCard === card.id) setRevealing(undefined)
+                }}
+                className="flex rounded-16 outline-none focus-visible:ring-2 focus-visible:ring-ring data-revealed:ring-2 data-revealed:ring-ring"
+              >
                 <CardTile
                   className="flex-1"
                   question={card.question}
                   answer={card.answer}
                   category={card.category.name}
                   progress={card.progress}
+                  onEdit={() => setEditing(card)}
                 />
               </li>
             ))}
@@ -150,6 +281,20 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
         </>
       )}
 
+      {editing && (
+        <EditCardDialog
+          key={editing.id}
+          card={editing}
+          onSaved={(card) => confirmSaved(card, 'updated')}
+          onClosed={() => setEditing(undefined)}
+          returnFocusTo={() =>
+            cardElement(editing.id)?.querySelector<HTMLElement>(
+              '[aria-label="Card actions"]',
+            ) ?? null
+          }
+        />
+      )}
+
       <p role="status" className="sr-only">
         {cards.isFetchingNextPage
           ? 'Loading more cards…'
@@ -160,6 +305,27 @@ export function AllCardsPage({ createShuffleSeed }: AllCardsPageProps) {
     </main>
   )
 }
+
+/** Drops selected Categories that no longer exist. */
+function withExistingCategories(
+  filters: CardFilters,
+  categories: CategoryList | undefined,
+): CardFilters {
+  if (!categories || filters.categoryIds.length === 0) return filters
+  const existing = filters.categoryIds.filter((id) =>
+    categories.items.some((c) => c.id === id),
+  )
+  return existing.length === filters.categoryIds.length
+    ? filters
+    : { ...filters, categoryIds: existing }
+}
+
+/** Whether the filters let `card` through, as the backend decides it. */
+const matches = (card: Card, { categoryIds, hideMastered }: CardFilters) =>
+  (categoryIds.length === 0 || categoryIds.includes(card.category.id)) &&
+  !(hideMastered && card.progress >= MASTERED)
+
+const MASTERED = 5
 
 /** CategoryFilter speaks in names; the API in stable Category ids. */
 const namesOf = (

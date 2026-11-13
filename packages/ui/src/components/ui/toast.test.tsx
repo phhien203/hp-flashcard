@@ -152,6 +152,38 @@ describe('Toast', () => {
     await expect.poll(() => toast('Saved.').query()).toBeNull()
   })
 
+  it('offers an action that runs and closes the toast', async () => {
+    const onClick = vi.fn()
+    const screen = await render(
+      <App
+        timeout={0}
+        title="Card created. Your filters hide it."
+        action={{ label: 'Show card', onClick }}
+      />,
+    )
+    await screen.getByRole('button', { name: 'Create card' }).click()
+    const shown = toast('Card created. Your filters hide it.')
+    await expect.element(shown).toBeVisible()
+
+    await shown.getByRole('button', { name: 'Show card' }).click()
+
+    expect(onClick).toHaveBeenCalledOnce()
+    await expect.poll(() => shown.query()).toBeNull()
+  })
+
+  it('has no action button without an action', async () => {
+    const screen = await render(<App timeout={0} />)
+    await screen.getByRole('button', { name: 'Create card' }).click()
+    await expect.element(toast()).toBeVisible()
+
+    expect(
+      toast()
+        .getByRole('button')
+        .elements()
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Close'])
+  })
+
   it('stacks several toasts', async () => {
     function Two() {
       const { add } = useToast()

@@ -53,12 +53,20 @@ describe('All Cards', () => {
       .toHaveAttribute('aria-valuenow', String(second!.progress))
   })
 
-  it('offers no Card actions until editing and deleting exist', async () => {
+  it("offers Edit in each Card's actions, but no Delete yet", async () => {
     await renderApp()
-
     await expectShowing(12, 40)
+
+    await cardList()
+      .getByRole('button', { name: 'Card actions' })
+      .first()
+      .click()
+
     await expect
-      .element(page.getByRole('button', { name: 'Card actions' }).first())
+      .element(page.getByRole('menuitem', { name: 'Edit' }))
+      .toBeVisible()
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Delete' }))
       .not.toBeInTheDocument()
   })
 

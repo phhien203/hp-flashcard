@@ -1,6 +1,13 @@
-import { QueryClient, useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 
 import { api } from '../api/client.js'
+import type { Card, CardInput, CardPatch } from '../api/types.js'
 
 /** How many Cards each request asks for: the first view and each Load More. */
 export const PAGE_SIZE = 12
@@ -23,10 +30,17 @@ export function createQueryClient() {
   })
 }
 
+/** Query keys, so every read and every invalidation agrees on them. */
+export const queryKeys = {
+  cardLists: ['cards', 'list'] as const,
+  card: (cardId: string) => ['cards', 'detail', cardId] as const,
+  categories: ['categories'] as const,
+}
+
 /** The matching Cards, a page of 12 at a time, paged by the backend. */
 export function useCardPages({ categoryIds, hideMastered, seed }: CardFilters) {
   return useInfiniteQuery({
-    queryKey: ['cards', 'list', { categoryIds, hideMastered, seed }],
+    queryKey: [...queryKeys.cardLists, { categoryIds, hideMastered, seed }],
     queryFn: ({ pageParam, signal }) =>
       api.listCards(
         {
@@ -50,7 +64,47 @@ export function useCardPages({ categoryIds, hideMastered, seed }: CardFilters) {
 /** Every Category with its global Card count. */
 export function useCategories() {
   return useQuery({
-    queryKey: ['categories'],
+    queryKey: queryKeys.categories,
     queryFn: ({ signal }) => api.listCategories(signal),
+  })
+}
+
+/** Fetches one Card, fresh from the backend. */
+export const fetchCard = (queryClient: QueryClient, cardId: string) =>
+  queryClient.fetchQuery({
+    queryKey: queryKeys.card(cardId),
+    queryFn: ({ signal }) => api.getCard(cardId, signal),
+    staleTime: 0,
+  })
+
+/**
+ * After a successful write: store the saved Card and refetch every Card
+ * listing and the Category counts. The mutation stays pending until they
+ * have arrived, so the screen changes once, when it is coherent.
+ */
+async function afterWrite(queryClient: QueryClient, card: Card) {
+  queryClient.setQueryData(queryKeys.card(card.id), card)
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.cardLists }),
+  ])
+}
+
+/** Creates a Card. Nothing changes on screen until the backend agrees. */
+export function useCreateCard() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CardInput) => api.createCard(input),
+    onSuccess: (card) => afterWrite(queryClient, card),
+  })
+}
+
+/** Edits a Card. Nothing changes on screen until the backend agrees. */
+export function useUpdateCard() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ cardId, patch }: { cardId: string; patch: CardPatch }) =>
+      api.updateCard(cardId, patch),
+    onSuccess: (card) => afterWrite(queryClient, card),
   })
 }

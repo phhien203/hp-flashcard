@@ -8,7 +8,7 @@ export const ROUTE_HREFS: Record<Route, string> = {
   study: '#/study',
 }
 
-const routeFromHash = (hash: string): Route =>
+export const routeFromHash = (hash: string): Route =>
   hash === ROUTE_HREFS.study ? 'study' : 'all-cards'
 
 const subscribe = (onChange: () => void) => {

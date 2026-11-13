@@ -67,17 +67,32 @@ describe('the mock backend', () => {
 
   /** Fetches `path` and checks status and body against the contract. */
   async function expectConforms(
-    method: 'get',
+    method: 'get' | 'post' | 'patch',
     pathTemplate: string,
     path: string,
     status: number,
+    requestBody?: unknown,
   ) {
+    const operation = spec.paths[pathTemplate][method]
+    if (requestBody !== undefined && status < 400) {
+      const checkRequest = ajv.compile(
+        operation.requestBody.content['application/json'].schema,
+      )
+      expect(
+        checkRequest(requestBody) ? [] : checkRequest.errors,
+        'the request body breaks the contract',
+      ).toEqual([])
+    }
     const response = await fetch(`${ORIGIN}${path}`, {
       method: method.toUpperCase(),
+      headers:
+        requestBody === undefined
+          ? undefined
+          : { 'Content-Type': 'application/json' },
+      body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
     })
     expect(response.status).toBe(status)
-    const definition =
-      spec.paths[pathTemplate][method].responses[String(status)]
+    const definition = operation.responses[String(status)]
     expect(definition, `${status} is not documented`).toBeDefined()
     const body: unknown = await response.json()
     const check = ajv.compile(definition.content['application/json'].schema)
@@ -156,5 +171,99 @@ describe('the mock backend', () => {
         { id: expect.any(String), name: 'Biology', count: 7 },
       ]),
     })
+  })
+
+  const input = {
+    question: '  What is DNA? ',
+    answer: 'Deoxyribonucleic acid.',
+    category: ' biology',
+  }
+
+  it('creates a Card', async () => {
+    const card = await expectConforms(
+      'post',
+      '/api/cards',
+      '/api/cards',
+      201,
+      input,
+    )
+    expect(card).toMatchObject({
+      question: 'What is DNA?',
+      category: { name: 'Biology' },
+      progress: 0,
+    })
+  })
+
+  it.for([
+    [{ ...input, question: '   ' }, 'question'],
+    [{ question: 'Q?', answer: 'A.' }, 'category'],
+    [{ ...input, answer: 42 }, 'answer'],
+    [{ ...input, progress: 5 }, 'progress'],
+  ] as const)(
+    'rejects a Card with a bad %# field with a field error',
+    async ([body, field]) => {
+      const error = await expectConforms(
+        'post',
+        '/api/cards',
+        '/api/cards',
+        400,
+        body,
+      )
+      expect(error).toMatchObject({
+        code: 'validation_failed',
+        fieldErrors: { [field]: expect.any(String) },
+      })
+    },
+  )
+
+  it('edits a Card, keeping its id and Progress', async () => {
+    const card = await expectConforms(
+      'patch',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      200,
+      { category: 'History ' },
+    )
+    expect(card).toMatchObject({
+      id: 'card-01',
+      progress: 5,
+      category: { name: 'History' },
+    })
+  })
+
+  it('rejects a blank edit with a field error', async () => {
+    const error = await expectConforms(
+      'patch',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      400,
+      { answer: ' ' },
+    )
+    expect(error).toMatchObject({
+      code: 'validation_failed',
+      fieldErrors: { answer: expect.any(String) },
+    })
+  })
+
+  it('rejects an empty edit', async () => {
+    const error = await expectConforms(
+      'patch',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      400,
+      {},
+    )
+    expect(error).toMatchObject({ code: 'validation_failed' })
+  })
+
+  it('answers 404 when editing an unknown Card', async () => {
+    const error = await expectConforms(
+      'patch',
+      '/api/cards/{cardId}',
+      '/api/cards/nope',
+      404,
+      { question: 'Q?' },
+    )
+    expect(error).toMatchObject({ code: 'not_found' })
   })
 })

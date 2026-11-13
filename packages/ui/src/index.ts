@@ -87,6 +87,7 @@ export { Textarea, type TextareaProps } from './components/ui/textarea.js'
 export {
   ToastProvider,
   useToast,
+  type ToastAction,
   type ToastOptions,
   type ToastProviderProps,
 } from './components/ui/toast.js'

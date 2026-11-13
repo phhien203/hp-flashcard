@@ -13,6 +13,10 @@ import {
 import { renderApp } from '../test/render-app.js'
 
 const questions = FIXTURE.map((card) => card.question)
+
+/** The questions of `cards` in the backend's order for `seed`. */
+const shuffled = (cards: typeof FIXTURE, seed: number) =>
+  seededShuffle(cards, seed, (card) => card.id).map((card) => card.question)
 const shuffle = () => page.getByRole('button', { name: 'Shuffle' }).click()
 
 describe('Shuffle', () => {
@@ -22,7 +26,7 @@ describe('Shuffle', () => {
 
     await shuffle()
 
-    const expected = seededShuffle(questions, 42)
+    const expected = shuffled(FIXTURE, 42)
     await expect.poll(shownQuestions).toEqual(expected.slice(0, 12))
     await expectShowing(12, 40)
     // With this seed, Cards from beyond the first 12 come to the front.
@@ -46,7 +50,7 @@ describe('Shuffle', () => {
     await shuffle()
     await expect
       .poll(shownQuestions)
-      .toEqual(seededShuffle(questions, 42).slice(0, 12))
+      .toEqual(shuffled(FIXTURE, 42).slice(0, 12))
 
     await loadMore()
     await expectShowing(24, 40)
@@ -56,7 +60,7 @@ describe('Shuffle', () => {
     await expectShowing(40, 40)
 
     const shown = shownQuestions()
-    expect(shown).toEqual(seededShuffle(questions, 42))
+    expect(shown).toEqual(shuffled(FIXTURE, 42))
     expect(new Set(shown).size).toBe(40)
     expect([...shown].sort()).toEqual([...questions].sort())
   })
@@ -67,26 +71,22 @@ describe('Shuffle', () => {
     await hideMastered().click()
     const matching = FIXTURE.filter(
       (card) => card.category === 'Programming' && card.progress < 5,
-    ).map((card) => card.question)
+    )
     await expectShowing(matching.length, matching.length)
 
     await shuffle()
 
-    await expect.poll(shownQuestions).toEqual(seededShuffle(matching, 3))
+    await expect.poll(shownQuestions).toEqual(shuffled(matching, 3))
     await expect.element(hideMastered()).toBeChecked()
   })
 
   it('reshuffles with a new seed each time', async () => {
     await renderApp({ seeds: [1, 2] })
     await shuffle()
-    await expect
-      .poll(shownQuestions)
-      .toEqual(seededShuffle(questions, 1).slice(0, 12))
+    await expect.poll(shownQuestions).toEqual(shuffled(FIXTURE, 1).slice(0, 12))
 
     await shuffle()
 
-    await expect
-      .poll(shownQuestions)
-      .toEqual(seededShuffle(questions, 2).slice(0, 12))
+    await expect.poll(shownQuestions).toEqual(shuffled(FIXTURE, 2).slice(0, 12))
   })
 })
