@@ -1,5 +1,15 @@
 # @hp-flashcard/ui
 
+## 0.2.0
+
+### Minor Changes
+
+- [#57](https://github.com/phhien203/hp-flashcard/pull/57) [`57aab3e`](https://github.com/phhien203/hp-flashcard/commit/57aab3eec6244c63ab230651cc4352929e11cf00) Thanks [@phhien203](https://github.com/phhien203)! - `Flashcard` now shows the teal "Mastered 5/5" badge instead of the progress bar once `progress` reaches 5, on both sides, matching `CardTile` and the Figma Study Mode "Mastered" frame.
+
+- [#51](https://github.com/phhien203/hp-flashcard/pull/51) [`838f6f2`](https://github.com/phhien203/hp-flashcard/commit/838f6f2550c46c8d939fcee71cdf50032a210e85) Thanks [@phhien203](https://github.com/phhien203)! - `CardTile`'s `onEdit` and `onDelete` are now optional. The actions menu offers only the items whose callback you pass. With neither, the tile is read-only and has no "Card actions" button, so an app can show Cards before it supports editing or deleting them.
+
+- [#53](https://github.com/phhien203/hp-flashcard/pull/53) [`475c864`](https://github.com/phhien203/hp-flashcard/commit/475c8640ae89ede382814fa7a63917064c14235f) Thanks [@phhien203](https://github.com/phhien203)! - Toasts can offer an action button. Pass `action: { label, onClick }` to `useToast().add()`, for example a "Show card" button on a "Your filters hide it" notice. Clicking it runs `onClick` and closes the toast. The new `ToastAction` type describes the option.
+
 ## 0.1.0
 
 ### Minor Changes
