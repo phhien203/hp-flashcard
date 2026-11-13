@@ -1,4 +1,4 @@
-import type { Card, CardPage, Category } from '../api/types.js'
+import type { Card, CardPage, CardStatistics, Category } from '../api/types.js'
 import fixture from './fixtures/cards.json' with { type: 'json' }
 import { seededShuffle } from './shuffle.js'
 
@@ -27,7 +27,8 @@ export interface CardQuery {
   seed: number | undefined
 }
 
-const MASTERED = 5
+/** The Progress of a Mastered Card, and the most a Card can have. */
+export const MASTERED = 5
 
 /** The fields of a Card a client writes, before validation. */
 export interface CardFields {
@@ -150,6 +151,28 @@ export class MockStore {
     }
   }
 
+  /**
+   * Counts the Cards in the given Categories (every Category when none) by
+   * Progress. Mastery, pages and shuffling don't change the counts.
+   */
+  statistics(categoryIds: readonly string[]): CardStatistics {
+    const counts: CardStatistics = {
+      total: 0,
+      notStarted: 0,
+      inProgress: 0,
+      mastered: 0,
+    }
+    for (const card of this.#cards) {
+      if (categoryIds.length > 0 && !categoryIds.includes(card.categoryId))
+        continue
+      counts.total++
+      if (card.progress === 0) counts.notStarted++
+      else if (card.progress >= MASTERED) counts.mastered++
+      else counts.inProgress++
+    }
+    return counts
+  }
+
   getCard(id: string): Card | undefined {
     const card = this.#cards.find((c) => c.id === id)
     return card && this.#toCard(card)
@@ -193,6 +216,17 @@ export class MockStore {
       this.#dropEmptyCategories()
     }
     return { ok: true, card: this.#toCard(card) }
+  }
+
+  /**
+   * Sets a Card's Progress, a whole number from 0 to 5. Everything else
+   * about the Card, its place in the default order included, stays.
+   */
+  setProgress(id: string, progress: number): Card | undefined {
+    const card = this.#cards.find((c) => c.id === id)
+    if (!card) return undefined
+    card.progress = progress
+    return this.#toCard(card)
   }
 
   /**

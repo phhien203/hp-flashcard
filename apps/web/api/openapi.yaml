@@ -119,6 +119,40 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/cards/statistics:
+    get:
+      tags: [Cards]
+      operationId: getCardStatistics
+      summary: Count matching Cards by Progress
+      description: |
+        Counts every Card that matches the Category filter, whatever its
+        Progress, page or shuffled place: `notStarted` (Progress 0),
+        `inProgress` (1 to 4) and `mastered` (5) add up to `total`.
+      parameters:
+        - name: category
+          in: query
+          description: |
+            Category identifiers, as for listing Cards. A Card counts when
+            its Category is any of them. Omit to count every Category.
+            Identifiers that name no Category match nothing.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/CategoryId'
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardStatistics'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/cards/{cardId}:
     parameters:
       - name: cardId
@@ -177,6 +211,43 @@ paths:
       responses:
         '204':
           description: The Card was deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cards/{cardId}/progress:
+    parameters:
+      - name: cardId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/CardId'
+    put:
+      tags: [Cards]
+      operationId: setCardProgress
+      summary: Set a Card's Progress
+      description: |
+        Sets the Card's Progress to the given value: one more to credit an
+        "I Know This", 0 to reset it. The value is absolute, so repeating
+        the request changes nothing more. The Card keeps its identifier,
+        content, Category and place in the default order. A `400` names
+        each rejected field in `fieldErrors`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProgressInput'
+      responses:
+        '200':
+          description: The updated Card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -301,6 +372,34 @@ components:
         category:
           type: string
           description: A Category name. Trimmed; must not be blank.
+    ProgressInput:
+      type: object
+      additionalProperties: false
+      required: [progress]
+      properties:
+        progress:
+          $ref: '#/components/schemas/Progress'
+    CardStatistics:
+      type: object
+      additionalProperties: false
+      required: [total, notStarted, inProgress, mastered]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: How many Cards match the Category filter.
+        notStarted:
+          type: integer
+          minimum: 0
+          description: How many of them have Progress 0.
+        inProgress:
+          type: integer
+          minimum: 0
+          description: How many of them have Progress 1 to 4.
+        mastered:
+          type: integer
+          minimum: 0
+          description: How many of them have Progress 5.
     Category:
       type: object
       additionalProperties: false

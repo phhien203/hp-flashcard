@@ -37,10 +37,12 @@ describe('the OpenAPI document', () => {
     expect(operations.sort()).toEqual([
       'DELETE /api/cards/{cardId}',
       'GET /api/cards',
+      'GET /api/cards/statistics',
       'GET /api/cards/{cardId}',
       'GET /api/categories',
       'PATCH /api/cards/{cardId}',
       'POST /api/cards',
+      'PUT /api/cards/{cardId}/progress',
     ])
   })
 
@@ -69,7 +71,7 @@ describe('the mock backend', () => {
 
   /** Fetches `path` and checks status and body against the contract. */
   async function expectConforms(
-    method: 'get' | 'post' | 'patch' | 'delete',
+    method: 'get' | 'post' | 'patch' | 'put' | 'delete',
     pathTemplate: string,
     path: string,
     status: number,
@@ -317,5 +319,155 @@ describe('the mock backend', () => {
       500,
     )
     expect(error).toMatchObject({ code: 'server_error' })
+  })
+
+  describe('Progress', () => {
+    const setProgress = (cardId: string, body: unknown, status: number) =>
+      expectConforms(
+        'put',
+        '/api/cards/{cardId}/progress',
+        `/api/cards/${cardId}/progress`,
+        status,
+        body,
+      )
+
+    it("sets a Card's Progress, keeping its content, Category and place", async () => {
+      const before = mockStore.getCard('card-02')
+      const card = await setProgress('card-02', { progress: 5 }, 200)
+      expect(card).toEqual({ ...before, progress: 5 })
+      const page = await expectConforms(
+        'get',
+        '/api/cards',
+        '/api/cards?limit=3',
+        200,
+      )
+      expect(page).toMatchObject({
+        items: [{ id: 'card-01' }, { id: 'card-02', progress: 5 }, {}],
+      })
+    })
+
+    it('resets to 0, and repeating a request changes nothing more', async () => {
+      for (const progress of [0, 0]) {
+        const card = await setProgress('card-01', { progress }, 200)
+        expect(card).toMatchObject({ id: 'card-01', progress: 0 })
+      }
+      for (const progress of [3, 3]) {
+        const card = await setProgress('card-01', { progress }, 200)
+        expect(card).toMatchObject({ progress: 3 })
+      }
+      await expect(
+        expectConforms('get', '/api/cards/{cardId}', '/api/cards/card-01', 200),
+      ).resolves.toMatchObject({ progress: 3 })
+    })
+
+    it.for([
+      [{ progress: -1 }, 'progress'],
+      [{ progress: 6 }, 'progress'],
+      [{ progress: 2.5 }, 'progress'],
+      [{ progress: '3' }, 'progress'],
+      [{}, 'progress'],
+      [{ progress: 1, question: 'Q?' }, 'question'],
+    ] as const)(
+      'rejects the body %j with a field error',
+      async ([body, field]) => {
+        const error = await setProgress('card-02', body, 400)
+        expect(error).toMatchObject({
+          code: 'validation_failed',
+          fieldErrors: { [field]: expect.any(String) },
+        })
+        expect(mockStore.getCard('card-02')).toMatchObject({ progress: 4 })
+      },
+    )
+
+    it('rejects a body that is not an object', async () => {
+      const error = await setProgress('card-02', [3], 400)
+      expect(error).toMatchObject({ code: 'validation_failed' })
+    })
+
+    it('answers 404 for an unknown Card', async () => {
+      const error = await setProgress('nope', { progress: 1 }, 404)
+      expect(error).toMatchObject({ code: 'not_found' })
+    })
+
+    // The body the development `progress-error` scenario sends.
+    it('answers 500 when saving fails on the server', async () => {
+      server.use(http.put(`${ORIGIN}/api/cards/:cardId/progress`, serverError))
+      const error = await setProgress('card-02', { progress: 5 }, 500)
+      expect(error).toMatchObject({ code: 'server_error' })
+    })
+  })
+
+  describe('statistics', () => {
+    const statistics = (query = '', status = 200) =>
+      expectConforms(
+        'get',
+        '/api/cards/statistics',
+        `/api/cards/statistics${query}`,
+        status,
+      )
+    const categoryId = (name: string) =>
+      mockStore.listCategories().find((c) => c.name === name)!.id
+
+    it('counts every Card by Progress', async () => {
+      expect(await statistics()).toEqual({
+        total: 40,
+        notStarted: 8,
+        inProgress: 24,
+        mastered: 8,
+      })
+    })
+
+    it('counts Cards in any of the given Categories', async () => {
+      const ids = [categoryId('Biology'), categoryId('Programming')]
+      const body = (await statistics(
+        `?category=${ids[0]}&category=${ids[1]}`,
+      )) as Record<string, number>
+      expect(body.total).toBe(14)
+      expect(body.notStarted! + body.inProgress! + body.mastered!).toBe(14)
+    })
+
+    it('counts nothing for a Category that does not exist', async () => {
+      expect(await statistics('?category=cat-404')).toEqual({
+        total: 0,
+        notStarted: 0,
+        inProgress: 0,
+        mastered: 0,
+      })
+    })
+
+    it('counts nothing when there are no Cards', async () => {
+      mockStore.reset([])
+      expect(await statistics()).toEqual({
+        total: 0,
+        notStarted: 0,
+        inProgress: 0,
+        mastered: 0,
+      })
+    })
+
+    it('follows Progress changes', async () => {
+      await expectConforms(
+        'put',
+        '/api/cards/{cardId}/progress',
+        '/api/cards/card-02/progress',
+        200,
+        { progress: 5 },
+      )
+      expect(await statistics()).toMatchObject({ inProgress: 23, mastered: 9 })
+    })
+
+    it('rejects an empty Category with a field error', async () => {
+      const error = await statistics('?category=', 400)
+      expect(error).toMatchObject({
+        code: 'validation_failed',
+        fieldErrors: { category: expect.any(String) },
+      })
+    })
+
+    it('answers 500 when the server fails', async () => {
+      server.use(http.get(`${ORIGIN}/api/cards/statistics`, serverError))
+      const error = await statistics('', 500)
+      expect(error).toMatchObject({ code: 'server_error' })
+    })
   })
 })

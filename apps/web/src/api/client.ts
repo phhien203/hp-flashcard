@@ -4,8 +4,11 @@ import type {
   CardInput,
   CardPage,
   CardPatch,
+  CardStatistics,
+  CardStatisticsQuery,
   CategoryList,
   ListCardsQuery,
+  ProgressInput,
 } from './types.js'
 
 /** A failed API response, with the contract's error body when there is one. */
@@ -93,6 +96,18 @@ export function createApiClient(baseUrl = '') {
         method: 'PATCH',
         body: patch,
       }),
+    setCardProgress: (cardId: string, progress: number) =>
+      request<Card>(`/api/cards/${encodeURIComponent(cardId)}/progress`, {
+        method: 'PUT',
+        body: { progress } satisfies ProgressInput,
+      }),
+    getCardStatistics: (query: CardStatisticsQuery, signal?: AbortSignal) => {
+      const search = toSearchParams(query).toString()
+      return request<CardStatistics>(
+        `/api/cards/statistics${search ? `?${search}` : ''}`,
+        { signal },
+      )
+    },
     deleteCard: (cardId: string) =>
       request<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'DELETE',

@@ -20,7 +20,7 @@ import { renderApp } from '../test/render-app.js'
 const studyLink = () => page.getByRole('link', { name: 'Study Mode' })
 const allCardsLink = () => page.getByRole('link', { name: 'All Cards' })
 const studyHeading = () =>
-  page.getByRole('heading', { name: 'Study Mode Works' })
+  page.getByRole('heading', { name: 'Study Mode', level: 1 })
 const leaveDialog = () =>
   page.getByRole('alertdialog', { name: 'Leave without creating the card?' })
 

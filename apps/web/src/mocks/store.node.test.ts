@@ -264,6 +264,50 @@ describe('MockStore writes', () => {
     expect(store.listCategories()).toEqual([])
     expect(page(store)).toMatchObject({ items: [], total: 0, nextOffset: null })
   })
+
+  it('sets Progress, keeping the Card and its place', () => {
+    const store = new MockStore()
+    const before = store.getCard('card-02')!
+    expect(store.setProgress('card-02', 5)).toEqual({ ...before, progress: 5 })
+    expect(page(store, { limit: 3 }).items.map((card) => card.id)).toEqual([
+      'card-01',
+      'card-02',
+      'card-03',
+    ])
+    expect(page(store, { hideMastered: true }).total).toBe(31)
+    expect(store.setProgress('nope', 1)).toBeUndefined()
+  })
+})
+
+describe('MockStore statistics', () => {
+  it('counts Cards by Progress, across the whole collection', () => {
+    const store = new MockStore()
+    expect(store.statistics([])).toEqual({
+      total: 40,
+      notStarted: 8,
+      inProgress: 24,
+      mastered: 8,
+    })
+  })
+
+  it('counts only the given Categories, any of them', () => {
+    const store = new MockStore()
+    const ids = store
+      .listCategories()
+      .filter((c) => ['Biology', 'History'].includes(c.name))
+      .map((c) => c.id)
+    const expected = fixture.filter((card) =>
+      ['Biology', 'History'].includes(card.category),
+    )
+    expect(store.statistics(ids)).toEqual({
+      total: expected.length,
+      notStarted: expected.filter((card) => card.progress === 0).length,
+      inProgress: expected.filter((c) => c.progress > 0 && c.progress < 5)
+        .length,
+      mastered: expected.filter((card) => card.progress === 5).length,
+    })
+    expect(store.statistics(['cat-404']).total).toBe(0)
+  })
 })
 
 describe('scenariosFromUrl', () => {

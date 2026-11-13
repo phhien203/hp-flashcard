@@ -58,6 +58,14 @@ async function expectNoAxeViolationsAfterTyping(options: axe.RunOptions = {}) {
  */
 const expectNoAxeViolationsInModal = expectNoAxeViolationsAfterTyping
 
+/**
+ * Like `expectNoAxeViolations`, once a Checkbox has been clicked. Firefox's
+ * content process crashes there too (seen after ticking Hide Mastered, on
+ * All Cards as on Study Mode), so these checks run in Chromium and WebKit
+ * only; the interactions still run in Firefox.
+ */
+const expectNoAxeViolationsAfterCheckbox = expectNoAxeViolationsAfterTyping
+
 describe('axe', () => {
   it('finds no violations on All Cards', async () => {
     await renderApp()
@@ -77,13 +85,54 @@ describe('axe', () => {
     await expectNoAxeViolations({ rules: { region: { enabled: false } } })
   })
 
-  it('finds no violations on Study Mode', async () => {
+  it('finds no violations on Study Mode, on either side of the Card', async () => {
+    await renderApp()
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await expect.element(page.getByText('Card 1 of 40')).toBeVisible()
+    await expectNoAxeViolations()
+
+    await page.getByRole('button', { name: 'Show answer' }).click()
+    await expect
+      .element(page.getByRole('button', { name: 'Show question' }))
+      .toBeInTheDocument()
+    await expectNoAxeViolations()
+
+    await page.getByRole('button', { name: 'Next', exact: true }).click()
+    await expect.element(page.getByText('Card 2 of 40')).toBeVisible()
+    await expectNoAxeViolations()
+  })
+
+  it('finds no violations in Study Mode with no Cards', async () => {
+    SCENARIOS.empty(mockStore)
     await renderApp()
     await page.getByRole('link', { name: 'Study Mode' }).click()
     await expect
-      .element(page.getByRole('heading', { name: 'Study Mode Works' }))
+      .element(page.getByRole('heading', { name: 'No cards to study' }))
       .toBeVisible()
+    await expectNoAxeViolations()
+  })
 
+  it('finds no violations in Study Mode when all caught up', async () => {
+    mockStore.reset([
+      { id: 'a', question: 'Q?', answer: 'A.', category: 'Art', progress: 5 },
+    ])
+    await renderApp()
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await hideMastered().click()
+    await expect
+      .element(page.getByRole('heading', { name: 'You’re all caught up!' }))
+      .toBeVisible()
+    await expectNoAxeViolationsAfterCheckbox()
+  })
+
+  it('finds no violations in Study Mode when a save fails', async () => {
+    worker.use(...SCENARIOS['progress-error']())
+    await renderApp()
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await page.getByRole('button', { name: 'Reset Progress' }).click()
+    await expect
+      .element(page.getByText('Your progress could not be saved.'))
+      .toBeVisible()
     await expectNoAxeViolations()
   })
 
@@ -258,7 +307,7 @@ describe('keyboard', () => {
     page.getByRole('link', { name: 'Study Mode' }).element().focus()
     await userEvent.keyboard('{Enter}')
     await expect
-      .element(page.getByRole('heading', { name: 'Study Mode Works' }))
+      .element(page.getByRole('heading', { name: 'Study Mode', level: 1 }))
       .toBeVisible()
 
     page.getByRole('link', { name: 'All Cards' }).element().focus()
@@ -349,5 +398,44 @@ describe('responsive layout', () => {
         .getBoundingClientRect()
       expect(button.right).toBeLessThanOrEqual(dialog.right)
     }
+  })
+
+  it.for([
+    { name: 'mobile', width: 375, height: 812 },
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'desktop', width: 1440, height: 900 },
+  ])('fits Study Mode on $name', async ({ width, height }) => {
+    await page.viewport(width, height)
+    await renderApp()
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await expect.element(page.getByText('Card 1 of 40')).toBeVisible()
+
+    expect(overflowsHorizontally()).toBe(false)
+    const study = page.getByRole('region', { name: 'Study' }).element()
+    const statistics = page
+      .getByRole('region', { name: 'Study Statistics' })
+      .element()
+    for (const name of [
+      'All Categories',
+      'Shuffle',
+      'Already Mastered',
+      'Reset Progress',
+      'Previous',
+      'Next',
+    ]) {
+      const button = page
+        .getByRole('button', { name, exact: true })
+        .element()
+        .getBoundingClientRect()
+      expect(button.right).toBeLessThanOrEqual(
+        study.getBoundingClientRect().right,
+      )
+    }
+    // Side by side on desktop; the statistics follow the Card below it.
+    const beside = width >= 1280
+    expect(
+      statistics.getBoundingClientRect().left >=
+        study.getBoundingClientRect().right,
+    ).toBe(beside)
   })
 })

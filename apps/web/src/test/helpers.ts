@@ -124,15 +124,20 @@ export async function categoryMenuItems() {
 }
 
 /**
- * A handler that holds Card writes (`post` creates, `patch` edits, `delete`
- * deletes) until `release()`, to see pending states deterministically. It
- * counts them.
+ * A handler that holds Card writes (`post` creates, `patch` edits, `put`
+ * saves Progress, `delete` deletes) until `release()`, to see pending
+ * states deterministically. It counts them.
  */
-export function holdWrites(method: 'post' | 'patch' | 'delete') {
+export function holdWrites(method: 'post' | 'patch' | 'put' | 'delete') {
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
   const counter = { count: 0 }
-  const path = method === 'post' ? '/api/cards' : '/api/cards/:cardId'
+  const path =
+    method === 'post'
+      ? '/api/cards'
+      : method === 'put'
+        ? '/api/cards/:cardId/progress'
+        : '/api/cards/:cardId'
   const handler = http[method](path, async () => {
     counter.count++
     await released
@@ -171,4 +176,83 @@ export async function deleteCard(question: string) {
   // Earlier deletions' toasts may still be showing.
   await expect.element(toast('Card deleted successfully.').last()).toBeVisible()
   await expect.element(cardTile(question)).not.toBeInTheDocument()
+}
+
+/** Opens Study Mode from the header, and waits for its first Card. */
+export async function openStudy() {
+  await page.getByRole('link', { name: 'Study Mode' }).click()
+  await expect.element(studyCounter()).toBeVisible()
+}
+
+/** The "Card 3 of 40" position counter. */
+export const studyCounter = () => page.getByText(/^Card \d+ of \d+$/)
+
+/** The question of the Card Study Mode shows. */
+export const studyQuestion = () =>
+  document.querySelector('[data-slot="flashcard-front"] .text-preset-1')
+    ?.textContent ?? null
+
+/**
+ * Waits until Study Mode shows this Card, question side up, at this
+ * position: "Card `position` of `total`".
+ */
+export async function expectStudying(
+  question: string,
+  position: number,
+  total: number,
+) {
+  await expect.poll(studyQuestion).toBe(question)
+  await expect
+    .element(studyCounter())
+    .toHaveTextContent(`Card ${position} of ${total}`)
+  await expect
+    .element(page.getByRole('button', { name: 'Show answer' }))
+    .toBeInTheDocument()
+}
+
+/** Study Mode's buttons, by name. */
+export const studyButton = (
+  name:
+    | 'I Know This'
+    | 'Already Mastered'
+    | 'Reset Progress'
+    | 'Previous'
+    | 'Next'
+    | 'Shuffle',
+) => page.getByRole('button', { name, exact: true })
+
+/** A Study Statistics tile's number, e.g. `statistic('Mastered')`. */
+export const statistic = (
+  label: 'Total Cards' | 'Mastered' | 'In Progress' | 'Not Started',
+) => page.getByRole('group', { name: label }).getByText(/^(\d+|–)$/)
+
+/** Waits for the four Study Statistics. */
+export async function expectStatistics(counts: {
+  total: number
+  notStarted: number
+  inProgress: number
+  mastered: number
+}) {
+  await expect
+    .element(statistic('Total Cards'))
+    .toHaveTextContent(String(counts.total))
+  await expect
+    .element(statistic('Not Started'))
+    .toHaveTextContent(String(counts.notStarted))
+  await expect
+    .element(statistic('In Progress'))
+    .toHaveTextContent(String(counts.inProgress))
+  await expect
+    .element(statistic('Mastered'))
+    .toHaveTextContent(String(counts.mastered))
+}
+
+/** The Progress Study Mode shows for its Card: "3/5" or "Mastered 5/5". */
+export function studyProgress() {
+  const footer = document.querySelector(
+    '[data-slot="flashcard-front"]',
+  )?.lastElementChild
+  const bar = footer?.querySelector('[role="progressbar"]')
+  if (bar) return `${bar.getAttribute('aria-valuenow')}/5`
+  return footer?.textContent?.trim() ?? null
 }

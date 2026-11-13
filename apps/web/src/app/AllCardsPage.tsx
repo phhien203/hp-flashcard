@@ -6,15 +6,18 @@ import {
   useToast,
 } from '@hp-flashcard/ui'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import type { Card, Category, CategoryList } from '../api/types.js'
+import type { Card, CategoryList } from '../api/types.js'
+import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
+import { Notice } from './Notice.js'
 import {
   fetchCard,
   isNotFound,
+  MASTERED,
   queryKeys,
   useCardPages,
   useCategories,
@@ -347,20 +350,6 @@ export function AllCardsPage({
   )
 }
 
-/** Drops selected Categories that no longer exist. */
-function withExistingCategories(
-  filters: CardFilters,
-  categories: CategoryList | undefined,
-): CardFilters {
-  if (!categories || filters.categoryIds.length === 0) return filters
-  const existing = filters.categoryIds.filter((id) =>
-    categories.items.some((c) => c.id === id),
-  )
-  return existing.length === filters.categoryIds.length
-    ? filters
-    : { ...filters, categoryIds: existing }
-}
-
 /** The ids of the Cards after and before `cardId`, nearest first. */
 function neighboursOf(cards: readonly Card[], cardId: string) {
   const index = cards.findIndex((card) => card.id === cardId)
@@ -373,45 +362,3 @@ function neighboursOf(cards: readonly Card[], cardId: string) {
 const matches = (card: Card, { categoryIds, hideMastered }: CardFilters) =>
   (categoryIds.length === 0 || categoryIds.includes(card.category.id)) &&
   !(hideMastered && card.progress >= MASTERED)
-
-const MASTERED = 5
-
-/** CategoryFilter speaks in names; the API in stable Category ids. */
-const namesOf = (
-  categories: readonly Category[] | undefined,
-  ids: readonly string[],
-) => ids.flatMap((id) => categories?.find((c) => c.id === id)?.name ?? [])
-
-const idsOf = (
-  categories: readonly Category[] | undefined,
-  names: readonly string[],
-) => names.flatMap((name) => categories?.find((c) => c.name === name)?.id ?? [])
-
-function Notice({
-  title,
-  description,
-  role,
-  children,
-}: {
-  title: string
-  description?: string
-  role?: 'status' | 'alert'
-  children?: ReactNode
-}) {
-  return (
-    <div
-      role={role}
-      className="flex flex-col items-center gap-200 rounded-16 border border-border bg-card px-300 py-500 text-center text-card-foreground shadow-rest"
-    >
-      <div className="flex flex-col gap-100">
-        <p className="text-preset-3">{title}</p>
-        {description && (
-          <p className="text-preset-4-regular text-muted-foreground">
-            {description}
-          </p>
-        )}
-      </div>
-      {children}
-    </div>
-  )
-}
