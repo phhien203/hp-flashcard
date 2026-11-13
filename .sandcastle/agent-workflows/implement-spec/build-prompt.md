@@ -6,7 +6,7 @@ ticket out of a queue.
 - /tmp/spec.md: the spec it came from, for context only. Other tickets cover
   the rest of it.
 
-Read CODING_STANDARDS.md.
+Read AGENTS.md, CODING_STANDARDS.md and GLOSSARY.md.
 
 - Follow CLAUDE.md: the `packages/ui` source rules, and for a new component
   its export from `src/index.ts` plus a colocated story and test.
@@ -29,11 +29,11 @@ Read CODING_STANDARDS.md.
 - When the change shows in the UI, save a before and an after screenshot as
   PNGs in /tmp/evidence/.
 
-**Leave `purchases.created_at` and `courses.instructor_id` unindexed**, on
-purpose. If your ticket's report is slow, say so in your summary and leave it
-slow.
+Use the repository's existing workspace structure and the ticket's acceptance
+criteria. The parent spec supplies context, not permission to implement sibling
+tickets. The workflow owns issue state and PR creation; leave the ticket open.
 
 Write your summary to /tmp/pr-body.md: what the ticket asked for, what you
-built, what you deliberately left out. In its Evidence section, reference each
-screenshot by its absolute path, e.g. `![after](/tmp/evidence/after.png)`. The
-workflow uploads them.
+built, what you deliberately left out. In its Evidence section, list screenshot
+filenames. The workflow uploads the screenshots as an artifact and adds its
+download link to the PR.
