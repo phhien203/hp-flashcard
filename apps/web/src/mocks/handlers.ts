@@ -15,16 +15,19 @@ const MAX_SEED = 4294967295
 const error = (status: number, body: ApiErrorBody) =>
   HttpResponse.json(body, { status })
 
+type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
+
 /** Parses an optional whole-number parameter, or explains why it can't. */
-function wholeNumber(
+function wholeNumber<F extends number | undefined>(
   raw: string | null,
-  { min, max, fallback }: { min: number; max: number; fallback?: number },
-): number | undefined | string {
-  if (raw === null) return fallback
-  if (!/^\d+$/.test(raw)) return 'Must be a whole number.'
+  { min, max, fallback }: { min: number; max: number; fallback: F },
+): Parsed<number | F> {
+  if (raw === null) return { ok: true, value: fallback }
+  if (!/^\d+$/.test(raw)) return { ok: false, error: 'Must be a whole number.' }
   const value = Number(raw)
-  if (value < min || value > max) return `Must be from ${min} to ${max}.`
-  return value
+  if (value < min || value > max)
+    return { ok: false, error: `Must be from ${min} to ${max}.` }
+  return { ok: true, value }
 }
 
 /**
@@ -38,33 +41,30 @@ export const createHandlers = (origin = '') => [
     const fieldErrors: Record<string, string> = {}
 
     const hideMasteredRaw = params.get('hideMastered')
-    if (
-      hideMasteredRaw !== null &&
-      !['true', 'false'].includes(hideMasteredRaw)
-    )
-      fieldErrors.hideMastered = 'Must be true or false.'
+    const hideMasteredError =
+      hideMasteredRaw !== null && !['true', 'false'].includes(hideMasteredRaw)
+    if (hideMasteredError) fieldErrors.hideMastered = 'Must be true or false.'
 
     const offset = wholeNumber(params.get('offset'), {
       min: 0,
       max: Number.MAX_SAFE_INTEGER,
       fallback: 0,
     })
-    if (typeof offset === 'string') fieldErrors.offset = offset
+    if (!offset.ok) fieldErrors.offset = offset.error
     const limit = wholeNumber(params.get('limit'), {
       min: 1,
       max: MAX_LIMIT,
       fallback: DEFAULT_LIMIT,
     })
-    if (typeof limit === 'string') fieldErrors.limit = limit
-    const seed = wholeNumber(params.get('seed'), { min: 0, max: MAX_SEED })
-    if (typeof seed === 'string') fieldErrors.seed = seed
+    if (!limit.ok) fieldErrors.limit = limit.error
+    const seed = wholeNumber(params.get('seed'), {
+      min: 0,
+      max: MAX_SEED,
+      fallback: undefined,
+    })
+    if (!seed.ok) fieldErrors.seed = seed.error
 
-    if (
-      Object.keys(fieldErrors).length > 0 ||
-      typeof offset !== 'number' ||
-      typeof limit !== 'number' ||
-      typeof seed === 'string'
-    ) {
+    if (!offset.ok || !limit.ok || !seed.ok || hideMasteredError) {
       return error(400, {
         code: 'validation_failed',
         message: 'The query parameters are invalid.',
@@ -76,9 +76,9 @@ export const createHandlers = (origin = '') => [
       mockStore.listCards({
         categoryIds: params.getAll('category'),
         hideMastered: hideMasteredRaw === 'true',
-        offset,
-        limit,
-        seed,
+        offset: offset.value,
+        limit: limit.value,
+        seed: seed.value,
       }),
     )
   }),
