@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import fixture from './fixtures/cards.json' with { type: 'json' }
 import { scenariosFromUrl } from './scenarios.js'
 import { seededShuffle } from './shuffle.js'
-import { MockStore } from './store.js'
+import { MASTERED, MockStore } from './store.js'
 
 const page = (
   store: MockStore,
@@ -302,9 +302,10 @@ describe('MockStore statistics', () => {
     expect(store.statistics(ids)).toEqual({
       total: expected.length,
       notStarted: expected.filter((card) => card.progress === 0).length,
-      inProgress: expected.filter((c) => c.progress > 0 && c.progress < 5)
-        .length,
-      mastered: expected.filter((card) => card.progress === 5).length,
+      inProgress: expected.filter(
+        (c) => c.progress > 0 && c.progress < MASTERED,
+      ).length,
+      mastered: expected.filter((card) => card.progress === MASTERED).length,
     })
     expect(store.statistics(['cat-404']).total).toBe(0)
   })
