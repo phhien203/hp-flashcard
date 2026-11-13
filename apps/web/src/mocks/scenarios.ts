@@ -87,7 +87,8 @@ export const SCENARIOS = {
 
 export type ScenarioName = keyof typeof SCENARIOS
 
-const serverError = () =>
+/** The backend's answer when it fails. */
+export const serverError = () =>
   HttpResponse.json<ApiErrorBody>(
     { code: 'server_error', message: 'The server failed.' },
     { status: 500 },

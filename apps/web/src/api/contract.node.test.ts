@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { compileErrors, dereference, validate } from '@readme/openapi-parser'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
+import { http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -13,6 +14,7 @@ import {
   TYPES_URL,
 } from '../../scripts/api-types.ts'
 import { createHandlers } from '../mocks/handlers.js'
+import { serverError } from '../mocks/scenarios.js'
 import { mockStore } from '../mocks/store.js'
 
 const SPEC_PATH = fileURLToPath(SPEC_URL)
@@ -303,5 +305,17 @@ describe('the mock backend', () => {
       )
       expect(error).toMatchObject({ code: 'not_found' })
     }
+  })
+
+  // The body the development `delete-error` scenario sends.
+  it('answers 500 when deleting fails on the server', async () => {
+    server.use(http.delete(`${ORIGIN}/api/cards/:cardId`, serverError))
+    const error = await expectConforms(
+      'delete',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      500,
+    )
+    expect(error).toMatchObject({ code: 'server_error' })
   })
 })
