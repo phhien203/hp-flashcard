@@ -176,6 +176,46 @@ describe('CardTile', () => {
     expect(trigger.width).toBeGreaterThan(16)
   })
 
+  it('has no actions menu without onEdit and onDelete', async () => {
+    const screen = await render(
+      <CardTile
+        question={card.question}
+        answer={card.answer}
+        category={card.category}
+        progress={card.progress}
+      />,
+    )
+
+    await expect
+      .element(screen.getByRole('article', { name: card.question }))
+      .toBeVisible()
+    await expect
+      .element(screen.getByRole('button', { name: 'Card actions' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('offers only the actions it has a callback for', async () => {
+    const screen = await render(
+      <CardTile
+        question={card.question}
+        answer={card.answer}
+        category={card.category}
+        progress={card.progress}
+        onEdit={() => {}}
+      />,
+    )
+
+    await screen.getByRole('button', { name: 'Card actions' }).click()
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Edit' }))
+      .toBeVisible()
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Delete' }))
+      .not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('passes props such as className to the article', async () => {
     const screen = await renderTile({
       className: 'max-w-dialog',

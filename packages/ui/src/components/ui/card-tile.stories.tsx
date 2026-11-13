@@ -68,6 +68,17 @@ export const LongText: Story = {
   },
 }
 
+/** Without `onEdit` and `onDelete` the tile is read-only: no actions menu. */
+export const ReadOnly: Story = {
+  args: { progress: 3, onEdit: undefined, onDelete: undefined },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText('3/5')).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: 'Card actions' }),
+    ).toBeNull()
+  },
+}
+
 /** The kebab menu offers Edit and Delete, which call `onEdit` and `onDelete`. */
 export const Actions: Story = {
   play: async ({ args, canvas, userEvent }) => {

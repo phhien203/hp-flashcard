@@ -1,0 +1,10 @@
+/*
+ * The app consumes the design system as a Tailwind v4 app would
+ * (`@import "@hp-flashcard/ui/theme.css"`), but points at the source file:
+ * Tailwind resolves CSS imports itself and ignores Vite's custom
+ * "@hp-flashcard/source" condition, and dist/ may not exist in dev.
+ * theme.css brings the Figma tokens, the Poppins font and the components'
+ * classes; Tailwind scans this app's own files automatically.
+ */
+@import 'tailwindcss';
+@import '../../../packages/ui/src/styles/theme.css';

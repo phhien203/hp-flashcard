@@ -8,7 +8,13 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default defineConfig([
-  globalIgnores(['**/dist', '**/storybook-static', '**/coverage']),
+  globalIgnores([
+    '**/dist',
+    '**/storybook-static',
+    '**/coverage',
+    // Generated from apps/web/api/openapi.yaml.
+    'apps/web/src/api/schema.d.ts',
+  ]),
   {
     files: ['**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
@@ -64,6 +70,31 @@ export default defineConfig([
               // arbitrary value: p-[13px], bg-(--x), [mask-type:alpha],
               // bg-red/[0.5]. Arbitrary variants like
               // has-data-[icon=x]: and [&_svg]: are still allowed.
+              pattern: String.raw`^.*[\])](?:\/[\w.%-]+)?!?$`,
+              message:
+                'Arbitrary value in "$0": use a design token from theme.css (or add one there).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The app follows the same token rules as the design system.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    extends: [betterTailwindcss.configs['correctness-error']],
+    settings: {
+      'better-tailwindcss': {
+        cwd: 'apps/web',
+        entryPoint: 'src/styles.css',
+      },
+    },
+    rules: {
+      'better-tailwindcss/no-restricted-classes': [
+        'error',
+        {
+          restrict: [
+            {
               pattern: String.raw`^.*[\])](?:\/[\w.%-]+)?!?$`,
               message:
                 'Arbitrary value in "$0": use a design token from theme.css (or add one there).',
