@@ -37,6 +37,30 @@ export const SCENARIOS = {
       }),
     ]
   },
+  /** Creating and editing Cards takes 1.5 seconds. */
+  'slow-writes': () => [
+    http.post('/api/cards', async () => {
+      await delay(1500)
+    }),
+    http.patch('/api/cards/:cardId', async () => {
+      await delay(1500)
+    }),
+  ],
+  /** The first Card creation fails with a server error; later ones work. */
+  'create-error': () => [writeFailsOnce('post', '/api/cards', serverError)],
+  /** The first Card edit fails with a server error; later ones work. */
+  'edit-error': () => [
+    writeFailsOnce('patch', '/api/cards/:cardId', serverError),
+  ],
+  /** The first Card edit finds no such Card, as if it had been deleted. */
+  'edit-not-found': () => [
+    writeFailsOnce('patch', '/api/cards/:cardId', () =>
+      HttpResponse.json<ApiErrorBody>(
+        { code: 'not_found', message: 'No Card has this id.' },
+        { status: 404 },
+      ),
+    ),
+  ],
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
 
 export type ScenarioName = keyof typeof SCENARIOS
@@ -58,6 +82,20 @@ function failOnce(matches: (offset: number) => boolean) {
       return serverError()
     }),
   ]
+}
+
+/** Answers the first matching write with `respond`, then lets them through. */
+function writeFailsOnce(
+  method: 'post' | 'patch',
+  path: string,
+  respond: () => Response,
+) {
+  let failed = false
+  return http[method](path, () => {
+    if (failed) return
+    failed = true
+    return respond()
+  })
 }
 
 export const isScenarioName = (name: string): name is ScenarioName =>

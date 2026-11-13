@@ -1,14 +1,20 @@
 import axe from 'axe-core'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { page, server, userEvent } from 'vitest/browser'
 
 import { worker } from '../mocks/browser.js'
 import { SCENARIOS } from '../mocks/scenarios.js'
 import { mockStore } from '../mocks/store.js'
 import {
   cardList,
+  createCard,
+  createForm,
+  editDialog,
   expectShowing,
+  fillFields,
   hideMastered,
+  openEdit,
+  toast,
   toggleCategories,
 } from '../test/helpers.js'
 import { renderApp } from '../test/render-app.js'
@@ -27,6 +33,18 @@ async function expectNoAxeViolations(options: axe.RunOptions = {}) {
       targets: nodes.map((node) => node.target.join(' ')),
     })),
   ).toEqual([])
+}
+
+/**
+ * Like `expectNoAxeViolations`, for a page where a text field has had
+ * focus. Firefox's content process crashes when axe-core runs over such a
+ * page (Playwright's Firefox; reproduced with only the `label` or
+ * `aria-allowed-attr` rule), so there these checks run in Chromium and
+ * WebKit only. The interactions before them still run in Firefox.
+ */
+async function expectNoAxeViolationsAfterTyping(options: axe.RunOptions = {}) {
+  if (server.browser === 'firefox') return
+  await expectNoAxeViolations(options)
 }
 
 describe('axe', () => {
@@ -75,6 +93,62 @@ describe('axe', () => {
   })
 })
 
+describe('axe on Card management', () => {
+  // Dialogs and toasts are portalled to the end of <body>, outside the
+  // landmarks, like every popup.
+  const outsideLandmarks = { rules: { region: { enabled: false } } }
+
+  it('finds no violations in the create form with field errors', async () => {
+    await renderApp()
+    await expectShowing(12, 40)
+    await createForm().getByRole('button', { name: 'Create Card' }).click()
+    await expect
+      .element(createForm().getByText('Please enter a question.'))
+      .toBeVisible()
+
+    await expectNoAxeViolationsAfterTyping()
+  })
+
+  it('finds no violations in the edit dialog and its discard confirmation', async () => {
+    await renderApp()
+    await expectShowing(12, 40)
+    await openEdit('What is the capital of Australia?')
+    await fillFields(editDialog(), { answer: ' ' })
+    await editDialog().getByRole('button', { name: 'Update Card' }).click()
+    await expect
+      .element(editDialog().getByText('Please enter an answer.'))
+      .toBeVisible()
+    await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+
+    await userEvent.keyboard('{Escape}')
+    await expect
+      .element(page.getByRole('alertdialog', { name: 'Discard your changes?' }))
+      .toBeVisible()
+    await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+  })
+
+  it('finds no violations with a Show card notification', async () => {
+    await renderApp()
+    await toggleCategories('History')
+    await createCard({ question: 'Q?', answer: 'A.', category: 'Art' })
+    await expect
+      .element(toast('Card created successfully. Your filters hide it.'))
+      .toBeVisible()
+
+    await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+  })
+
+  it('finds no violations in the leave confirmation', async () => {
+    await renderApp()
+    await expectShowing(12, 40)
+    await fillFields(createForm(), { question: 'Unfinished?' })
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await expect.element(page.getByRole('alertdialog')).toBeVisible()
+
+    await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+  })
+})
+
 describe('keyboard', () => {
   it('reaches and works every browsing control from the keyboard', async () => {
     await renderApp({ seeds: [5] })
@@ -92,6 +166,18 @@ describe('keyboard', () => {
     await userEvent.tab()
     await expect
       .element(page.getByRole('link', { name: 'All Cards' }))
+      .toHaveFocus()
+
+    // The create form.
+    for (const name of ['Question', 'Answer', 'Category']) {
+      await userEvent.tab()
+      await expect
+        .element(page.getByRole('textbox', { name, exact: true }))
+        .toHaveFocus()
+    }
+    await userEvent.tab()
+    await expect
+      .element(page.getByRole('button', { name: 'Create Card' }))
       .toHaveFocus()
 
     // The Category menu: open, tick the first Category, close.
@@ -181,6 +267,31 @@ describe('responsive layout', () => {
         .element(page.getByRole('button', { name: 'Shuffle' }))
         .toBeVisible()
       await expect.element(hideMastered()).toBeVisible()
+    },
+  )
+
+  it.for([
+    { name: 'mobile', width: 375, height: 667 },
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'desktop', width: 1440, height: 900 },
+  ])(
+    'fits the create form and the edit dialog on $name',
+    async ({ width, height }) => {
+      await page.viewport(width, height)
+      await renderApp()
+      await expectShowing(12, 40)
+
+      const form = createForm().element().getBoundingClientRect()
+      expect(form.width).toBeGreaterThan(0)
+      expect(form.right).toBeLessThanOrEqual(window.innerWidth)
+      expect(overflowsHorizontally()).toBe(false)
+
+      await openEdit('What is the capital of Australia?')
+      const dialog = editDialog().element().getBoundingClientRect()
+      expect(dialog.left).toBeGreaterThanOrEqual(0)
+      expect(dialog.right).toBeLessThanOrEqual(window.innerWidth)
+      expect(dialog.top).toBeGreaterThanOrEqual(0)
+      expect(dialog.bottom).toBeLessThanOrEqual(window.innerHeight)
     },
   )
 })

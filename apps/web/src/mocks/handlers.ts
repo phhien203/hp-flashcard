@@ -6,7 +6,12 @@ import type {
   CategoryList,
   Card,
 } from '../api/types.js'
-import { mockStore } from './store.js'
+import {
+  BLANK_FIELD_MESSAGES,
+  mockStore,
+  type CardFields,
+  type WriteResult,
+} from './store.js'
 
 const DEFAULT_LIMIT = 12
 const MAX_LIMIT = 48
@@ -15,7 +20,63 @@ const MAX_SEED = 4294967295
 const error = (status: number, body: ApiErrorBody) =>
   HttpResponse.json(body, { status })
 
-type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
+const FIELDS = ['question', 'answer', 'category'] as const
+
+const invalid = (message: string, fieldErrors: Record<string, string>) =>
+  error(400, { code: 'validation_failed', message, fieldErrors })
+
+const notFound = (cardId: string) =>
+  error(404, { code: 'not_found', message: `No Card has the id "${cardId}".` })
+
+/**
+ * Reads a `CardInput` (every field `required`) or `CardPatch` body: an
+ * object of string fields and nothing else. Blank values are the store's
+ * business; this checks only the shape.
+ */
+async function readCardBody(
+  request: Request,
+  { required }: { required: boolean },
+): Promise<Parsed<Partial<CardFields>>> {
+  const body: unknown = await request.json().catch(() => undefined)
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    return { ok: false, error: 'The body must be a JSON object.' }
+  const fieldErrors: Record<string, string> = {}
+  const fields: Partial<CardFields> = {}
+  for (const [name, value] of Object.entries(body)) {
+    if (!(FIELDS as readonly string[]).includes(name))
+      fieldErrors[name] = 'Unknown field.'
+    else if (typeof value !== 'string') fieldErrors[name] = 'Must be text.'
+    else fields[name as keyof CardFields] = value
+  }
+  for (const name of FIELDS) {
+    if (required && !(name in body))
+      fieldErrors[name] = BLANK_FIELD_MESSAGES[name]
+  }
+  if (!required && Object.keys(body).length === 0)
+    return { ok: false, error: 'Give at least one field to change.' }
+  if (Object.keys(fieldErrors).length > 0)
+    return { ok: false, error: 'The Card is invalid.', fieldErrors }
+  return { ok: true, value: fields }
+}
+
+/** Answers a store write: the Card, or why it failed. */
+function writeResponse(result: WriteResult, cardId: string, status = 200) {
+  if (result.ok) {
+    return HttpResponse.json<Card>(result.card, {
+      status,
+      headers:
+        status === 201
+          ? { Location: `/api/cards/${encodeURIComponent(result.card.id)}` }
+          : undefined,
+    })
+  }
+  if (result.reason === 'not_found') return notFound(cardId)
+  return invalid('The Card is invalid.', result.fieldErrors)
+}
+
+type Parsed<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string; fieldErrors?: Record<string, string> }
 
 /** Parses an optional whole-number parameter, or explains why it can't. */
 function wholeNumber<F extends number | undefined>(
@@ -83,16 +144,34 @@ export const createHandlers = (origin = '') => [
     )
   }),
 
+  http.post(`${origin}/api/cards`, async ({ request }) => {
+    const body = await readCardBody(request, { required: true })
+    if (!body.ok) return invalid(body.error, body.fieldErrors ?? {})
+    return writeResponse(
+      mockStore.createCard(body.value as CardFields),
+      '',
+      201,
+    )
+  }),
+
   http.get<{ cardId: string }>(`${origin}/api/cards/:cardId`, ({ params }) => {
     const card = mockStore.getCard(params.cardId)
-    if (!card) {
-      return error(404, {
-        code: 'not_found',
-        message: `No Card has the id "${params.cardId}".`,
-      })
-    }
+    if (!card) return notFound(params.cardId)
     return HttpResponse.json<Card>(card)
   }),
+
+  http.patch<{ cardId: string }>(
+    `${origin}/api/cards/:cardId`,
+    async ({ params, request }) => {
+      if (!mockStore.getCard(params.cardId)) return notFound(params.cardId)
+      const body = await readCardBody(request, { required: false })
+      if (!body.ok) return invalid(body.error, body.fieldErrors ?? {})
+      return writeResponse(
+        mockStore.updateCard(params.cardId, body.value),
+        params.cardId,
+      )
+    },
+  ),
 
   http.get(`${origin}/api/categories`, () =>
     HttpResponse.json<CategoryList>({ items: mockStore.listCategories() }),

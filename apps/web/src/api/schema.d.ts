@@ -18,7 +18,10 @@ export interface paths {
          *     `seed`, the whole matching collection is shuffled by that seed before
          *     it is paged, so requesting the next pages with the same filters and
          *     `seed` continues the same order, without duplicates or omissions,
-         *     while the collection is unchanged.
+         *     while the collection is unchanged. A Card's place in a shuffled
+         *     order depends only on the `seed` and the Card's identifier, so
+         *     creating, editing or deleting a Card leaves the other Cards in the
+         *     same relative order.
          */
         get: operations["listCards"];
         put?: never;
@@ -28,7 +31,7 @@ export interface paths {
          *     are trimmed; blank values are rejected. Duplicate questions are
          *     allowed. The Category is matched to an existing one ignoring letter
          *     case and surrounding whitespace (keeping that Category's spelling),
-         *     or created.
+         *     or created. A `400` names each rejected field in `fieldErrors`.
          */
         post: operations["createCard"];
         delete?: never;
@@ -60,8 +63,9 @@ export interface paths {
         /**
          * Edit a Card's content or Category
          * @description Updates the given fields, with the same rules as creation. The Card
-         *     keeps its identifier and Progress. A Category left without Cards
-         *     ceases to exist.
+         *     keeps its identifier, Progress and place in the default order. A
+         *     Category left without Cards ceases to exist. A `400` names each
+         *     rejected field in `fieldErrors`.
          */
         patch: operations["updateCard"];
         trace?: never;
@@ -127,9 +131,13 @@ export interface components {
             /** @description A Category name. Trimmed; must not be blank. */
             category: string;
         };
+        /** @description The fields to change; at least one. */
         CardPatch: {
+            /** @description Trimmed; must not be blank. */
             question?: string;
+            /** @description Trimmed; must not be blank. */
             answer?: string;
+            /** @description A Category name. Trimmed; must not be blank. */
             category?: string;
         };
         Category: {

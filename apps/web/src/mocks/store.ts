@@ -29,6 +29,41 @@ export interface CardQuery {
 
 const MASTERED = 5
 
+/** The fields of a Card a client writes, before validation. */
+export interface CardFields {
+  question: string
+  answer: string
+  category: string
+}
+
+/** Why a write was rejected: messages keyed by field name. */
+export type FieldErrors = Partial<Record<keyof CardFields, string>>
+
+export type WriteResult =
+  | { ok: true; card: Card }
+  | { ok: false; reason: 'invalid'; fieldErrors: FieldErrors }
+  | { ok: false; reason: 'not_found' }
+
+/** The message for a blank field, as the app also shows it. */
+export const BLANK_FIELD_MESSAGES: Record<keyof CardFields, string> = {
+  question: 'Please enter a question.',
+  answer: 'Please enter an answer.',
+  category: 'Please enter a category.',
+}
+
+/** Trims `fields` and reports the blank ones. */
+function validate(fields: Partial<CardFields>) {
+  const fieldErrors: FieldErrors = {}
+  const trimmed: Partial<CardFields> = {}
+  for (const name of ['question', 'answer', 'category'] as const) {
+    const value = fields[name]
+    if (value === undefined) continue
+    trimmed[name] = value.trim()
+    if (!trimmed[name]) fieldErrors[name] = BLANK_FIELD_MESSAGES[name]
+  }
+  return { trimmed, fieldErrors }
+}
+
 /** Category names are equivalent regardless of case and surrounding whitespace. */
 export const categoryKey = (name: string) => name.trim().toLocaleLowerCase()
 
@@ -42,6 +77,7 @@ export class MockStore {
   #cards: StoredCard[] = []
   #categories = new Map<string, { id: string; name: string }>()
   #nextCategoryId = 1
+  #nextCardId = 1
 
   constructor(seed: readonly SeedCard[] = fixture) {
     this.reset(seed)
@@ -52,6 +88,7 @@ export class MockStore {
     this.#cards = []
     this.#categories.clear()
     this.#nextCategoryId = 1
+    this.#nextCardId = 1
     for (const card of seed) {
       this.#cards.push({
         id: card.id,
@@ -100,7 +137,8 @@ export class MockStore {
         (categoryIds.length === 0 || categoryIds.includes(card.categoryId)) &&
         !(hideMastered && card.progress >= MASTERED),
     )
-    if (seed !== undefined) matching = seededShuffle(matching, seed)
+    if (seed !== undefined)
+      matching = seededShuffle(matching, seed, (card) => card.id)
     const items = matching.slice(offset, offset + limit)
     const end = offset + items.length
     return {
@@ -115,6 +153,61 @@ export class MockStore {
   getCard(id: string): Card | undefined {
     const card = this.#cards.find((c) => c.id === id)
     return card && this.#toCard(card)
+  }
+
+  /**
+   * Creates a Card with Progress 0, first in the default order. Fields are
+   * trimmed and must not be blank; the Category is matched by name ignoring
+   * case and surrounding whitespace, or created.
+   */
+  createCard(fields: CardFields): WriteResult {
+    const { trimmed, fieldErrors } = validate(fields)
+    if (Object.keys(fieldErrors).length > 0)
+      return { ok: false, reason: 'invalid', fieldErrors }
+    const card: StoredCard = {
+      id: this.#newCardId(),
+      question: trimmed.question!,
+      answer: trimmed.answer!,
+      categoryId: this.#categoryFor(trimmed.category!).id,
+      progress: 0,
+    }
+    this.#cards.unshift(card)
+    return { ok: true, card: this.#toCard(card) }
+  }
+
+  /**
+   * Updates the given fields with the same rules as creation. The Card
+   * keeps its id, Progress and place in the default order; a Category left
+   * without Cards ceases to exist.
+   */
+  updateCard(id: string, fields: Partial<CardFields>): WriteResult {
+    const card = this.#cards.find((c) => c.id === id)
+    if (!card) return { ok: false, reason: 'not_found' }
+    const { trimmed, fieldErrors } = validate(fields)
+    if (Object.keys(fieldErrors).length > 0)
+      return { ok: false, reason: 'invalid', fieldErrors }
+    if (trimmed.question !== undefined) card.question = trimmed.question
+    if (trimmed.answer !== undefined) card.answer = trimmed.answer
+    if (trimmed.category !== undefined) {
+      card.categoryId = this.#categoryFor(trimmed.category).id
+      this.#dropEmptyCategories()
+    }
+    return { ok: true, card: this.#toCard(card) }
+  }
+
+  #newCardId() {
+    let id: string
+    do id = `card-new-${this.#nextCardId++}`
+    while (this.#cards.some((c) => c.id === id))
+    return id
+  }
+
+  /** Forgets Categories without Cards, so a later one starts afresh. */
+  #dropEmptyCategories() {
+    const used = new Set(this.#cards.map((card) => card.categoryId))
+    for (const [key, category] of this.#categories) {
+      if (!used.has(category.id)) this.#categories.delete(key)
+    }
   }
 
   /** Every Category that has Cards, by name, with global counts. */

@@ -10,6 +10,9 @@ import { userEvent } from 'vitest/browser'
  */
 export async function parkPointer() {
   const park = document.createElement('div')
+  // A unique id gives the hover a selector that matches only this element,
+  // whatever else (portals, say) sits in <body>.
+  park.id = 'vitest-pointer-park'
   Object.assign(park.style, {
     position: 'fixed',
     right: '0',

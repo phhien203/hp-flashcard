@@ -117,3 +117,46 @@ export const KeyboardDismiss: Story = {
     await waitFor(() => expect(queryToast()).toBeNull())
   },
 }
+
+function SaveHiddenCard({ onShow }: { onShow: () => void }) {
+  const toast = useToast()
+  return (
+    <Button
+      onClick={() =>
+        toast.add({
+          title: 'Card created. Your filters hide it.',
+          timeout: 0,
+          action: { label: 'Show card', onClick: onShow },
+        })
+      }
+    >
+      Create card
+    </Button>
+  )
+}
+const onShow = fn()
+
+/** With an action: the button runs it and closes the toast. */
+export const WithAction: Story = {
+  args: { timeout: 0 },
+  render: (args) => (
+    <div className="p-300">
+      <ToastProvider {...args}>
+        <SaveHiddenCard onShow={onShow} />
+      </ToastProvider>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    onShow.mockClear()
+    await userEvent.click(canvas.getByRole('button', { name: 'Create card' }))
+    const toast = await screen.findByRole('dialog', {
+      name: 'Card created. Your filters hide it.',
+    })
+    await waitFor(() => expect(toast).toBeVisible())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show card' }))
+
+    await expect(onShow).toHaveBeenCalledOnce()
+    await waitFor(() => expect(toast).not.toBeInTheDocument())
+  },
+}
