@@ -1,4 +1,10 @@
-import { delay, http, HttpResponse, type AnyHandler } from 'msw'
+import {
+  delay,
+  http,
+  HttpResponse,
+  type AnyHandler,
+  type PathParams,
+} from 'msw'
 
 import type { ApiErrorBody } from '../api/types.js'
 import type { MockStore } from './store.js'
@@ -37,12 +43,15 @@ export const SCENARIOS = {
       }),
     ]
   },
-  /** Creating and editing Cards takes 1.5 seconds. */
+  /** Creating, editing and deleting Cards takes 1.5 seconds. */
   'slow-writes': () => [
     http.post('/api/cards', async () => {
       await delay(1500)
     }),
     http.patch('/api/cards/:cardId', async () => {
+      await delay(1500)
+    }),
+    http.delete('/api/cards/:cardId', async () => {
       await delay(1500)
     }),
   ],
@@ -54,12 +63,21 @@ export const SCENARIOS = {
   ],
   /** The first Card edit finds no such Card, as if it had been deleted. */
   'edit-not-found': () => [
-    writeFailsOnce('patch', '/api/cards/:cardId', () =>
-      HttpResponse.json<ApiErrorBody>(
-        { code: 'not_found', message: 'No Card has this id.' },
-        { status: 404 },
-      ),
-    ),
+    writeFailsOnce('patch', '/api/cards/:cardId', notFound),
+  ],
+  /** The first Card deletion fails with a server error; later ones work. */
+  'delete-error': () => [
+    writeFailsOnce('delete', '/api/cards/:cardId', serverError),
+  ],
+  /**
+   * The first Card deletion finds no such Card, as if another client had
+   * deleted it already: the Card is deleted too, then the backend says 404.
+   */
+  'delete-not-found': (store: MockStore) => [
+    writeFailsOnce('delete', '/api/cards/:cardId', ({ params }) => {
+      store.deleteCard(String(params.cardId))
+      return notFound()
+    }),
   ],
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
 
@@ -69,6 +87,12 @@ const serverError = () =>
   HttpResponse.json<ApiErrorBody>(
     { code: 'server_error', message: 'The server failed.' },
     { status: 500 },
+  )
+
+const notFound = () =>
+  HttpResponse.json<ApiErrorBody>(
+    { code: 'not_found', message: 'No Card has this id.' },
+    { status: 404 },
   )
 
 /** Fails the first Card listing whose offset matches, then lets them through. */
@@ -86,15 +110,15 @@ function failOnce(matches: (offset: number) => boolean) {
 
 /** Answers the first matching write with `respond`, then lets them through. */
 function writeFailsOnce(
-  method: 'post' | 'patch',
+  method: 'post' | 'patch' | 'delete',
   path: string,
-  respond: () => Response,
+  respond: (request: { params: PathParams }) => Response,
 ) {
   let failed = false
-  return http[method](path, () => {
+  return http[method](path, ({ params }) => {
     if (failed) return
     failed = true
-    return respond()
+    return respond({ params })
   })
 }
 

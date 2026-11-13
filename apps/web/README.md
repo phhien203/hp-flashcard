@@ -26,10 +26,12 @@ In development, add `?scenario=` to the page URL to see the app's other states. 
 | `initial-error`    | The first request for the first page fails |
 | `page-error`       | The first request for a later page fails   |
 | `categories-error` | The first Category listing fails           |
-| `slow-writes`      | Creating and editing Cards takes 1.5 s     |
+| `slow-writes`      | Creating, editing and deleting takes 1.5 s |
 | `create-error`     | The first Card creation fails              |
 | `edit-error`       | The first Card edit fails                  |
 | `edit-not-found`   | The first Card edit finds no such Card     |
+| `delete-error`     | The first Card deletion fails              |
+| `delete-not-found` | The first Card deletion finds it gone      |
 
 ## Tests
 

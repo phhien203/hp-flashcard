@@ -232,6 +232,38 @@ describe('MockStore writes', () => {
     })
     expect(store.getCard('card-01')?.answer).toBe(fixture[0]!.answer)
   })
+  it('deletes a Card, keeping the others in order', () => {
+    const store = new MockStore()
+    expect(store.deleteCard('card-02')).toBe(true)
+    expect(store.getCard('card-02')).toBeUndefined()
+    expect(page(store).total).toBe(39)
+    expect(page(store).items.map((card) => card.id)).toEqual(
+      fixture
+        .filter((card) => card.id !== 'card-02')
+        .slice(0, 12)
+        .map((card) => card.id),
+    )
+    const geography = store.listCategories().find((c) => c.name === 'Geography')
+    expect(geography?.count).toBe(
+      fixture.filter((card) => card.category === 'Geography').length - 1,
+    )
+  })
+
+  it('removes a Category with its last Card, and reports unknown Cards', () => {
+    const store = new MockStore([
+      { id: 'a', question: 'Q1', answer: 'A1', category: 'Art', progress: 0 },
+      { id: 'b', question: 'Q2', answer: 'A2', category: 'Music', progress: 3 },
+    ])
+    expect(store.deleteCard('a')).toBe(true)
+    expect(store.deleteCard('a')).toBe(false)
+    expect(store.deleteCard('nope')).toBe(false)
+    expect(store.listCategories()).toEqual([
+      { id: expect.any(String), name: 'Music', count: 1 },
+    ])
+    expect(store.deleteCard('b')).toBe(true)
+    expect(store.listCategories()).toEqual([])
+    expect(page(store)).toMatchObject({ items: [], total: 0, nextOffset: null })
+  })
 })
 
 describe('scenariosFromUrl', () => {

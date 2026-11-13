@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import { api } from '../api/client.js'
+import { api, ApiError } from '../api/client.js'
 import type { Card, CardInput, CardPatch } from '../api/types.js'
 
 /** How many Cards each request asks for: the first view and each Load More. */
@@ -84,6 +84,11 @@ export const fetchCard = (queryClient: QueryClient, cardId: string) =>
  */
 async function afterWrite(queryClient: QueryClient, card: Card) {
   queryClient.setQueryData(queryKeys.card(card.id), card)
+  await refetchCollection(queryClient)
+}
+
+/** Refetches every Card listing and the global Category counts. */
+async function refetchCollection(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
     queryClient.invalidateQueries({ queryKey: queryKeys.cardLists }),
@@ -106,5 +111,30 @@ export function useUpdateCard() {
     mutationFn: ({ cardId, patch }: { cardId: string; patch: CardPatch }) =>
       api.updateCard(cardId, patch),
     onSuccess: (card) => afterWrite(queryClient, card),
+  })
+}
+
+/** Whether a failed write found no such Card: it was already deleted. */
+export const isNotFound = (error: unknown) =>
+  error instanceof ApiError && error.status === 404
+
+/**
+ * Deletes a Card. Nothing changes on screen until the backend agrees: the
+ * mutation stays pending until the listings and counts have refetched. A
+ * Card the backend no longer has (404) is gone either way, so that also
+ * refetches, to drop it from the screen.
+ */
+export function useDeleteCard() {
+  const queryClient = useQueryClient()
+  const forget = async (cardId: string) => {
+    queryClient.removeQueries({ queryKey: queryKeys.card(cardId) })
+    await refetchCollection(queryClient)
+  }
+  return useMutation({
+    mutationFn: (cardId: string) => api.deleteCard(cardId),
+    onSuccess: (_, cardId) => forget(cardId),
+    onError: async (error, cardId) => {
+      if (isNotFound(error)) await forget(cardId)
+    },
   })
 }

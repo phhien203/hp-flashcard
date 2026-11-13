@@ -173,6 +173,14 @@ export const createHandlers = (origin = '') => [
     },
   ),
 
+  http.delete<{ cardId: string }>(
+    `${origin}/api/cards/:cardId`,
+    ({ params }) => {
+      if (!mockStore.deleteCard(params.cardId)) return notFound(params.cardId)
+      return new HttpResponse(null, { status: 204 })
+    },
+  ),
+
   http.get(`${origin}/api/categories`, () =>
     HttpResponse.json<CategoryList>({ items: mockStore.listCategories() }),
   ),

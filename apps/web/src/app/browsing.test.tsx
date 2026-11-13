@@ -53,7 +53,7 @@ describe('All Cards', () => {
       .toHaveAttribute('aria-valuenow', String(second!.progress))
   })
 
-  it("offers Edit in each Card's actions, but no Delete yet", async () => {
+  it("offers Edit and Delete in each Card's actions", async () => {
     await renderApp()
     await expectShowing(12, 40)
 
@@ -67,7 +67,7 @@ describe('All Cards', () => {
       .toBeVisible()
     await expect
       .element(page.getByRole('menuitem', { name: 'Delete' }))
-      .not.toBeInTheDocument()
+      .toBeVisible()
   })
 
   it('appends 12 Cards per Load More until every Card is shown', async () => {

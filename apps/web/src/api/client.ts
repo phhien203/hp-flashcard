@@ -72,6 +72,8 @@ export function createApiClient(baseUrl = '') {
       const body: unknown = await response.json().catch(() => undefined)
       throw new ApiError(response.status, isErrorBody(body) ? body : undefined)
     }
+    // 204 No Content has no body.
+    if (response.status === 204) return undefined as T
     return (await response.json()) as T
   }
 
@@ -90,6 +92,10 @@ export function createApiClient(baseUrl = '') {
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'PATCH',
         body: patch,
+      }),
+    deleteCard: (cardId: string) =>
+      request<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
+        method: 'DELETE',
       }),
     listCategories: (signal?: AbortSignal) =>
       request<CategoryList>('/api/categories', { signal }),

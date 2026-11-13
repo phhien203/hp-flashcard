@@ -195,6 +195,18 @@ export class MockStore {
     return { ok: true, card: this.#toCard(card) }
   }
 
+  /**
+   * Deletes a Card, reporting whether it existed. A Category left without
+   * Cards ceases to exist.
+   */
+  deleteCard(id: string): boolean {
+    const index = this.#cards.findIndex((c) => c.id === id)
+    if (index === -1) return false
+    this.#cards.splice(index, 1)
+    this.#dropEmptyCategories()
+    return true
+  }
+
   #newCardId() {
     let id: string
     do id = `card-new-${this.#nextCardId++}`

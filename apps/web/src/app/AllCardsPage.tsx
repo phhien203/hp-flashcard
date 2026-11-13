@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../api/client.js'
 import type { Card, Category, CategoryList } from '../api/types.js'
 import { CreateCardForm } from './CreateCardForm.js'
+import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
 import {
   fetchCard,
@@ -43,6 +44,11 @@ export function AllCardsPage({
 }: AllCardsPageProps) {
   const [selectedFilters, setFilters] = useState(INITIAL_FILTERS)
   const [editing, setEditing] = useState<Card>()
+  const [deleting, setDeleting] = useState<{
+    card: Card
+    /** The Cards beside it when the dialog opened, to take focus after. */
+    neighbourIds: string[]
+  }>()
   const [revealing, setRevealing] = useState<string>()
   const categories = useCategories()
   // A selected Category that no longer exists (its last Card moved away)
@@ -52,6 +58,7 @@ export function AllCardsPage({
   const queryClient = useQueryClient()
   const toast = useToast()
   const listRef = useRef<HTMLUListElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   const loaded = cards.data?.pages.flatMap((page) => page.items) ?? []
   const total = cards.data?.pages[0]?.total ?? 0
@@ -60,6 +67,10 @@ export function AllCardsPage({
   const cardElement = (cardId: string) =>
     listRef.current?.querySelector<HTMLElement>(
       `[data-card-id="${CSS.escape(cardId)}"]`,
+    ) ?? null
+  const cardActions = (cardId: string) =>
+    cardElement(cardId)?.querySelector<HTMLElement>(
+      '[aria-label="Card actions"]',
     ) ?? null
 
   // Toasts offering "Show card" act on this page: close them when it goes.
@@ -144,7 +155,11 @@ export function AllCardsPage({
 
   return (
     <main className="flex flex-col gap-300">
-      <h1 className="sr-only">All Cards</h1>
+      {/* Focusable from script only: it takes focus when a deleted Card
+          leaves no other Card to go to. */}
+      <h1 ref={headingRef} tabIndex={-1} className="sr-only">
+        All Cards
+      </h1>
 
       <CreateCardForm
         onHasDraftChange={onHasDraftChange}
@@ -251,6 +266,12 @@ export function AllCardsPage({
                   category={card.category.name}
                   progress={card.progress}
                   onEdit={() => setEditing(card)}
+                  onDelete={() =>
+                    setDeleting({
+                      card,
+                      neighbourIds: neighboursOf(loaded, card.id),
+                    })
+                  }
                 />
               </li>
             ))}
@@ -287,11 +308,32 @@ export function AllCardsPage({
           card={editing}
           onSaved={(card) => confirmSaved(card, 'updated')}
           onClosed={() => setEditing(undefined)}
-          returnFocusTo={() =>
-            cardElement(editing.id)?.querySelector<HTMLElement>(
-              '[aria-label="Card actions"]',
-            ) ?? null
+          returnFocusTo={() => cardActions(editing.id)}
+        />
+      )}
+
+      {deleting && (
+        <DeleteCardDialog
+          key={deleting.card.id}
+          card={deleting.card}
+          onDeleted={(outcome) =>
+            toast.add({
+              title:
+                outcome === 'deleted'
+                  ? 'Card deleted successfully.'
+                  : 'That card had already been deleted.',
+            })
           }
+          onClosed={() => setDeleting(undefined)}
+          returnFocusTo={(deleted) => {
+            if (!deleted) return cardActions(deleting.card.id)
+            // The next Card, else the one before, else the page.
+            for (const id of deleting.neighbourIds) {
+              const actions = cardActions(id)
+              if (actions) return actions
+            }
+            return headingRef.current
+          }}
         />
       )}
 
@@ -318,6 +360,14 @@ function withExistingCategories(
   return existing.length === filters.categoryIds.length
     ? filters
     : { ...filters, categoryIds: existing }
+}
+
+/** The ids of the Cards after and before `cardId`, nearest first. */
+function neighboursOf(cards: readonly Card[], cardId: string) {
+  const index = cards.findIndex((card) => card.id === cardId)
+  return [cards[index + 1], cards[index - 1]].flatMap((card) =>
+    card ? [card.id] : [],
+  )
 }
 
 /** Whether the filters let `card` through, as the backend decides it. */
