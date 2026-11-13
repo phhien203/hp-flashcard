@@ -2,8 +2,8 @@
 import '../styles.css'
 
 import { afterEach, beforeAll, beforeEach } from 'vitest'
-import { userEvent } from 'vitest/browser'
 
+import { parkPointer } from '../../../../vitest.pointer.js'
 import { startMockBackend, worker } from '../mocks/browser.js'
 import { mockStore } from '../mocks/store.js'
 
@@ -19,23 +19,7 @@ beforeEach(async () => {
   worker.resetHandlers()
   window.location.hash = ''
 
-  // The real pointer stays wherever the last test left it. Park it in the
-  // bottom-right corner, away from where the app renders, as packages/ui does.
-  const park = document.createElement('div')
-  Object.assign(park.style, {
-    position: 'fixed',
-    right: '0',
-    bottom: '0',
-    width: '16px',
-    height: '16px',
-    zIndex: '2147483647',
-  })
-  document.body.append(park)
-  try {
-    await userEvent.hover(park)
-  } finally {
-    park.remove()
-  }
+  await parkPointer()
 })
 
 afterEach(() => {
