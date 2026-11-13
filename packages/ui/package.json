@@ -1,6 +1,6 @@
 {
   "name": "@hp-flashcard/ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The hp-flashcard design system: React 19 components built on Base UI and Tailwind CSS v4.",
   "keywords": [
     "design-system",
