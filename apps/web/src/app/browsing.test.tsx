@@ -91,17 +91,16 @@ describe('All Cards', () => {
 })
 
 describe('Study Mode', () => {
-  it('shows exactly "Study Mode Works"', async () => {
+  it('shows Study Mode, starting with the first Card', async () => {
     await renderApp()
 
     await page.getByRole('link', { name: 'Study Mode' }).click()
 
     await expect
-      .element(page.getByRole('heading', { name: 'Study Mode Works' }))
-      .toBeVisible()
-    expect(page.getByRole('main').element().textContent).toBe(
-      'Study Mode Works',
-    )
+      .element(page.getByRole('heading', { name: 'Study Mode', level: 1 }))
+      .toBeInTheDocument()
+    await expect.element(page.getByText(questions[0]!)).toBeVisible()
+    await expect.element(page.getByText('Card 1 of 40')).toBeVisible()
     await expect
       .element(page.getByRole('link', { name: 'Study Mode' }))
       .toHaveAttribute('aria-current', 'page')
@@ -136,7 +135,7 @@ describe('Study Mode', () => {
 
     await page.getByRole('link', { name: 'Study Mode' }).click()
     await expect
-      .element(page.getByRole('heading', { name: 'Study Mode Works' }))
+      .element(page.getByRole('heading', { name: 'Study Mode', level: 1 }))
       .toBeVisible()
     await page.getByRole('link', { name: 'All Cards' }).click()
 

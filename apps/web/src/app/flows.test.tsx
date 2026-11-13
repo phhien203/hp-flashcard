@@ -209,7 +209,7 @@ describe('saved changes and navigation', () => {
 
     await page.getByRole('link', { name: 'Study Mode' }).click()
     await expect
-      .element(page.getByRole('heading', { name: 'Study Mode Works' }))
+      .element(page.getByRole('heading', { name: 'Study Mode', level: 1 }))
       .toBeVisible()
     await page.getByRole('link', { name: 'All Cards' }).click()
 

@@ -40,6 +40,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cards/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count matching Cards by Progress
+         * @description Counts every Card that matches the Category filter, whatever its
+         *     Progress, page or shuffled place: `notStarted` (Progress 0),
+         *     `inProgress` (1 to 4) and `mastered` (5) add up to `total`.
+         */
+        get: operations["getCardStatistics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cards/{cardId}": {
         parameters: {
             query?: never;
@@ -68,6 +90,32 @@ export interface paths {
          *     rejected field in `fieldErrors`.
          */
         patch: operations["updateCard"];
+        trace?: never;
+    };
+    "/api/cards/{cardId}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["schemas"]["CardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a Card's Progress
+         * @description Sets the Card's Progress to the given value: one more to credit an
+         *     "I Know This", 0 to reset it. The value is absolute, so repeating
+         *     the request changes nothing more. The Card keeps its identifier,
+         *     content, Category and place in the default order. A `400` names
+         *     each rejected field in `fieldErrors`.
+         */
+        put: operations["setCardProgress"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/categories": {
@@ -139,6 +187,19 @@ export interface components {
             answer?: string;
             /** @description A Category name. Trimmed; must not be blank. */
             category?: string;
+        };
+        ProgressInput: {
+            progress: components["schemas"]["Progress"];
+        };
+        CardStatistics: {
+            /** @description How many Cards match the Category filter. */
+            total: number;
+            /** @description How many of them have Progress 0. */
+            notStarted: number;
+            /** @description How many of them have Progress 1 to 4. */
+            inProgress: number;
+            /** @description How many of them have Progress 5. */
+            mastered: number;
         };
         Category: {
             id: components["schemas"]["CategoryId"];
@@ -260,6 +321,35 @@ export interface operations {
             500: components["responses"]["ServerError"];
         };
     };
+    getCardStatistics: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Category identifiers, as for listing Cards. A Card counts when
+                 *     its Category is any of them. Omit to count every Category.
+                 *     Identifiers that name no Category match nothing.
+                 */
+                category?: components["schemas"]["CategoryId"][];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardStatistics"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            500: components["responses"]["ServerError"];
+        };
+    };
     getCard: {
         parameters: {
             query?: never;
@@ -318,6 +408,35 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CardPatch"];
+            };
+        };
+        responses: {
+            /** @description The updated Card. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Card"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    setCardProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["schemas"]["CardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgressInput"];
             };
         };
         responses: {

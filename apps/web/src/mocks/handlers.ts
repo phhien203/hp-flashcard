@@ -3,11 +3,13 @@ import { http, HttpResponse } from 'msw'
 import type {
   ApiErrorBody,
   CardPage,
+  CardStatistics,
   CategoryList,
   Card,
 } from '../api/types.js'
 import {
   BLANK_FIELD_MESSAGES,
+  MASTERED,
   mockStore,
   type CardFields,
   type WriteResult,
@@ -73,6 +75,28 @@ function writeResponse(result: WriteResult, cardId: string, status = 200) {
   }
   if (result.reason === 'not_found') return notFound(cardId)
   return invalid('The Card is invalid.', result.fieldErrors)
+}
+
+/** Reads a `ProgressInput` body: `{ progress }`, a whole number from 0 to 5. */
+async function readProgressBody(request: Request): Promise<Parsed<number>> {
+  const body: unknown = await request.json().catch(() => undefined)
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    return { ok: false, error: 'The body must be a JSON object.' }
+  const fieldErrors: Record<string, string> = {}
+  for (const name of Object.keys(body)) {
+    if (name !== 'progress') fieldErrors[name] = 'Unknown field.'
+  }
+  const { progress } = body as { progress?: unknown }
+  if (
+    typeof progress !== 'number' ||
+    !Number.isInteger(progress) ||
+    progress < 0 ||
+    progress > MASTERED
+  )
+    fieldErrors.progress = `Must be a whole number from 0 to ${MASTERED}.`
+  if (Object.keys(fieldErrors).length > 0)
+    return { ok: false, error: 'The Progress is invalid.', fieldErrors }
+  return { ok: true, value: progress as number }
 }
 
 type Parsed<T> =
@@ -155,6 +179,16 @@ export const createHandlers = (origin = '') => [
     )
   }),
 
+  // Before /api/cards/:cardId, which would take "statistics" for an id.
+  http.get(`${origin}/api/cards/statistics`, ({ request }) => {
+    const categoryIds = new URL(request.url).searchParams.getAll('category')
+    if (categoryIds.some((id) => id === ''))
+      return invalid('The query parameters are invalid.', {
+        category: 'Must not be empty.',
+      })
+    return HttpResponse.json<CardStatistics>(mockStore.statistics(categoryIds))
+  }),
+
   http.get<{ cardId: string }>(`${origin}/api/cards/:cardId`, ({ params }) => {
     const card = mockStore.getCard(params.cardId)
     if (!card) return notFound(params.cardId)
@@ -171,6 +205,18 @@ export const createHandlers = (origin = '') => [
         mockStore.updateCard(params.cardId, body.value),
         params.cardId,
       )
+    },
+  ),
+
+  http.put<{ cardId: string }>(
+    `${origin}/api/cards/:cardId/progress`,
+    async ({ params, request }) => {
+      if (!mockStore.getCard(params.cardId)) return notFound(params.cardId)
+      const body = await readProgressBody(request)
+      if (!body.ok) return invalid(body.error, body.fieldErrors ?? {})
+      const card = mockStore.setProgress(params.cardId, body.value)
+      if (!card) return notFound(params.cardId)
+      return HttpResponse.json<Card>(card)
     },
   ),
 

@@ -44,7 +44,7 @@ export const SCENARIOS = {
       }),
     ]
   },
-  /** Creating, editing and deleting Cards takes 1.5 seconds. */
+  /** Creating, editing, deleting and saving Progress takes 1.5 seconds. */
   'slow-writes': () => [
     http.post('/api/cards', async () => {
       await delay(1500)
@@ -53,6 +53,9 @@ export const SCENARIOS = {
       await delay(1500)
     }),
     http.delete('/api/cards/:cardId', async () => {
+      await delay(1500)
+    }),
+    http.put('/api/cards/:cardId/progress', async () => {
       await delay(1500)
     }),
   ],
@@ -71,6 +74,10 @@ export const SCENARIOS = {
   /** The first Card deletion fails with a server error; later ones work. */
   'delete-error': () => [
     writeFailsOnce('delete', '/api/cards/:cardId', serverError),
+  ],
+  /** The first Progress save fails with a server error; later ones work. */
+  'progress-error': () => [
+    writeFailsOnce('put', '/api/cards/:cardId/progress', serverError),
   ],
   /**
    * The first Card deletion finds no such Card, as if another client had
@@ -109,7 +116,7 @@ function failOnce(matches: (offset: number) => boolean) {
 
 /** Answers the first matching write with `respond`, then lets them through. */
 function writeFailsOnce(
-  method: 'post' | 'patch' | 'delete',
+  method: 'post' | 'patch' | 'put' | 'delete',
   path: string,
   respond: (request: { params: PathParams }) => Response,
 ) {

@@ -17,6 +17,7 @@ import { useState, type MouseEvent } from 'react'
 import { AllCardsPage } from './AllCardsPage.js'
 import { ROUTE_HREFS, routeFromHash, useRoute } from './router.js'
 import { randomShuffleSeed } from './shuffle-seed.js'
+import { StudyPage } from './StudyPage.js'
 
 export interface AppProps {
   queryClient: QueryClient
@@ -70,9 +71,9 @@ export function App({
               />
             </div>
             {route === 'study' ? (
-              <main>
-                <h1 className="text-preset-2">Study Mode Works</h1>
-              </main>
+              // Mounted afresh on each visit, so the filters, Shuffle and
+              // position start from their initial values.
+              <StudyPage createShuffleSeed={createShuffleSeed} />
             ) : (
               // Mounted afresh on each visit, so the create form, filters,
               // Shuffle and the loaded count start from their initial values.
