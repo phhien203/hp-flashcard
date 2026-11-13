@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release
@@ -10,19 +11,46 @@ concurrency:
 
 jobs:
   release:
-    name: Version PR / publish to npm
+    name: Version PR / stage for npm approval
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push version commits and tags, create GitHub releases
+      contents: write # push version commits
       pull-requests: write # open the "Version Packages" PR
       id-token: write # npm trusted publishing (OIDC) + provenance
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       # With pending changesets: opens/updates the "Version Packages" PR.
-      # When that PR is merged: builds and publishes to npm via OIDC (no NPM_TOKEN).
+      # Publishing is separate: Changesets does not support npm staging.
       - uses: changesets/action@v2
+        id: changesets
         with:
-          publish-script: pnpm release
           pr-title: 'chore: version packages'
           commit-message: 'chore: version packages'
+          create-github-releases: false
+          push-git-tags: false
+      - name: Check whether the version is already published
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        id: version
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const { name, version } = JSON.parse(readFileSync('packages/ui/package.json', 'utf8'));
+          const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
+          if (!response.ok && response.status !== 404) {
+            throw new Error(`Registry version check failed: ${response.status}`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `published=${response.ok}\n`);
+          NODE
+      - name: Build and stage for manual npm approval
+        if: steps.version.outputs.published == 'false'
+        run: pnpm release
+      - name: Explain approval step
+        if: steps.version.outputs.published == 'false' && success()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'MARKDOWN'
+          ## Package staged — not yet published
+          Review the package in npm's **Staged Packages** tab and approve with 2FA.
+          No git tag or GitHub release has been created. Create those only after npm approval.
+          MARKDOWN

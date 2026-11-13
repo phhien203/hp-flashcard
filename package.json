@@ -21,7 +21,7 @@
     "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
     "check:package": "pnpm --filter @hp-flashcard/ui check:package",
     "changeset": "changeset",
-    "release": "pnpm build && changeset publish",
+    "release": "pnpm build && node scripts/stage-release.mjs",
     "prepare": "husky",
     "sandcastle": "tsx .sandcastle/main.ts"
   },
