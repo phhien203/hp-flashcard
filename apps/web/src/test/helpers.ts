@@ -96,10 +96,15 @@ export async function createCard(values: CardText) {
 export const cardTile = (question: string) =>
   cardList().getByRole('article', { name: question })
 
+/** Picks an action from the menu of the Card with this question. */
+async function chooseCardAction(question: string, action: 'Edit' | 'Delete') {
+  await cardTile(question).getByRole('button', { name: 'Card actions' }).click()
+  await page.getByRole('menuitem', { name: action }).click()
+}
+
 /** Opens the edit dialog of the Card with this question. */
 export async function openEdit(question: string) {
-  await cardTile(question).getByRole('button', { name: 'Card actions' }).click()
-  await page.getByRole('menuitem', { name: 'Edit' }).click()
+  await chooseCardAction(question, 'Edit')
   await expect.element(editDialog()).toBeVisible()
 }
 
@@ -154,8 +159,7 @@ export const deleteButton = () =>
 
 /** Opens the delete confirmation of the Card with this question. */
 export async function openDelete(question: string) {
-  await cardTile(question).getByRole('button', { name: 'Card actions' }).click()
-  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await chooseCardAction(question, 'Delete')
   await expect.element(deleteDialog()).toBeVisible()
 }
 
