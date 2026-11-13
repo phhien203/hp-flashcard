@@ -11,6 +11,10 @@
     "storybook": "pnpm --filter @hp-flashcard/storybook dev",
     "build": "pnpm --filter @hp-flashcard/ui build",
     "build-storybook": "pnpm --filter @hp-flashcard/storybook build",
+    "dev:web": "pnpm --filter @hp-flashcard/web dev",
+    "build:web": "pnpm --filter @hp-flashcard/web build",
+    "generate:api": "pnpm --filter @hp-flashcard/web generate:api",
+    "check:api": "pnpm --filter @hp-flashcard/web check:api",
     "test": "node --test scripts/implement-spec.test.mjs && vitest run",
     "test:watch": "vitest",
     "test:all": "node --test scripts/implement-spec.test.mjs && VITEST_BROWSERS=chromium,firefox,webkit vitest run",
@@ -52,7 +56,7 @@
   },
   "lint-staged": {
     "*.{js,mjs,cjs,ts,tsx,mts,cts}": [
-      "eslint --fix --max-warnings=0",
+      "eslint --fix --max-warnings=0 --no-warn-ignored",
       "prettier --write"
     ],
     "*.{json,md,mdx,css,yml,yaml}": "prettier --write"

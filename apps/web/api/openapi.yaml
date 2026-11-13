@@ -1,0 +1,353 @@
+openapi: 3.1.0
+info:
+  title: hp-flashcard API
+  version: 0.1.0
+  summary: Cards and their Categories.
+  description: |
+    The REST API the hp-flashcard app consumes. This document is the source
+    of truth: the app's TypeScript API types are generated from it, and the
+    mock backend (MSW) implements it.
+
+    Vocabulary follows GLOSSARY.md: a **Card** has a question, an answer and
+    exactly one **Category**; **Progress** runs from 0 to 5, and a Card at
+    5/5 is **Mastered**. Categories exist only through Cards.
+
+    Errors use one shape, `Error`. Validation failures (`400`) also carry
+    `fieldErrors`, keyed by the request body field or query parameter name.
+servers:
+  - url: /
+tags:
+  - name: Cards
+  - name: Categories
+
+paths:
+  /api/cards:
+    get:
+      tags: [Cards]
+      operationId: listCards
+      summary: List matching Cards, one page at a time
+      description: |
+        Returns a page of the Cards that match the filters. With no `seed`,
+        Cards come in the default order: most recently created first. With a
+        `seed`, the whole matching collection is shuffled by that seed before
+        it is paged, so requesting the next pages with the same filters and
+        `seed` continues the same order, without duplicates or omissions,
+        while the collection is unchanged.
+      parameters:
+        - name: category
+          in: query
+          description: |
+            Category identifiers. A Card matches when its Category is any of
+            them. Omit to match every Category. Identifiers that name no
+            Category match nothing.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/CategoryId'
+          style: form
+          explode: true
+        - name: hideMastered
+          in: query
+          description: Exclude Mastered Cards (Progress 5 of 5).
+          schema:
+            type: boolean
+            default: false
+        - name: offset
+          in: query
+          description: How many matching Cards to skip.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          description: The page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 48
+            default: 12
+        - name: seed
+          in: query
+          description: Shuffle the matching collection with this seed.
+          schema:
+            $ref: '#/components/schemas/ShuffleSeed'
+      responses:
+        '200':
+          description: A page of matching Cards.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPage'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Cards]
+      operationId: createCard
+      summary: Create a Card
+      description: |
+        Creates a Card with Progress 0, first in the default order. Fields
+        are trimmed; blank values are rejected. Duplicate questions are
+        allowed. The Category is matched to an existing one ignoring letter
+        case and surrounding whitespace (keeping that Category's spelling),
+        or created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardInput'
+      responses:
+        '201':
+          description: The created Card.
+          headers:
+            Location:
+              description: The Card's URL.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cards/{cardId}:
+    parameters:
+      - name: cardId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/CardId'
+    get:
+      tags: [Cards]
+      operationId: getCard
+      summary: Get one Card
+      responses:
+        '200':
+          description: The Card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags: [Cards]
+      operationId: updateCard
+      summary: Edit a Card's content or Category
+      description: |
+        Updates the given fields, with the same rules as creation. The Card
+        keeps its identifier and Progress. A Category left without Cards
+        ceases to exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardPatch'
+      responses:
+        '200':
+          description: The updated Card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [Cards]
+      operationId: deleteCard
+      summary: Delete a Card
+      description: A Category left without Cards ceases to exist.
+      responses:
+        '204':
+          description: The Card was deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: List every Category with its Card count
+      description: |
+        Counts are global: they cover every Card, whatever filters or pages
+        a client is showing. Categories are ordered by name.
+      responses:
+        '200':
+          description: All Categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryList'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  schemas:
+    CardId:
+      type: string
+      minLength: 1
+      description: A Card's stable, opaque identifier.
+    CategoryId:
+      type: string
+      minLength: 1
+      description: A Category's stable, opaque identifier.
+    ShuffleSeed:
+      type: integer
+      minimum: 0
+      maximum: 4294967295
+      description: A 32-bit unsigned shuffle seed.
+    Progress:
+      type: integer
+      minimum: 0
+      maximum: 5
+      description: Study Progress; 5 means Mastered.
+    CategoryRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          $ref: '#/components/schemas/CategoryId'
+        name:
+          type: string
+          minLength: 1
+    Card:
+      type: object
+      additionalProperties: false
+      required: [id, question, answer, category, progress]
+      properties:
+        id:
+          $ref: '#/components/schemas/CardId'
+        question:
+          type: string
+          minLength: 1
+        answer:
+          type: string
+          minLength: 1
+        category:
+          $ref: '#/components/schemas/CategoryRef'
+        progress:
+          $ref: '#/components/schemas/Progress'
+    CardPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit, nextOffset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+        total:
+          type: integer
+          minimum: 0
+          description: How many Cards match the filters, across all pages.
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        nextOffset:
+          description: The `offset` of the next page, or null on the last page.
+          oneOf:
+            - type: integer
+              minimum: 1
+            - type: 'null'
+    CardInput:
+      type: object
+      additionalProperties: false
+      required: [question, answer, category]
+      properties:
+        question:
+          type: string
+          description: Trimmed; must not be blank.
+        answer:
+          type: string
+          description: Trimmed; must not be blank.
+        category:
+          type: string
+          description: A Category name. Trimmed; must not be blank.
+    CardPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+        category:
+          type: string
+    Category:
+      type: object
+      additionalProperties: false
+      required: [id, name, count]
+      properties:
+        id:
+          $ref: '#/components/schemas/CategoryId'
+        name:
+          type: string
+          minLength: 1
+        count:
+          type: integer
+          minimum: 1
+          description: How many Cards are in the Category.
+    CategoryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [validation_failed, not_found, server_error]
+        message:
+          type: string
+        fieldErrors:
+          type: object
+          description: Messages keyed by body field or query parameter name.
+          additionalProperties:
+            type: string
+
+  responses:
+    ValidationFailed:
+      description: The request is invalid; `fieldErrors` says why.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No Card has this identifier.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: The server failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

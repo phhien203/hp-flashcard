@@ -2,6 +2,8 @@ pnpm-lock.yaml
 dist/
 storybook-static/
 coverage/
+# Generated from apps/web/api/openapi.yaml
+apps/web/src/api/schema.d.ts
 .changeset/*.md
 !.changeset/README.md
 **/CHANGELOG.md

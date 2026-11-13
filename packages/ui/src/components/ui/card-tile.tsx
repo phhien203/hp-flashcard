@@ -23,17 +23,25 @@ interface CardTileProps extends Omit<ComponentProps<'article'>, 'children'> {
    * instead of the progress bar.
    */
   progress: number
-  /** Called when the user picks Edit from the tile's actions menu. */
-  onEdit: () => void
-  /** Called when the user picks Delete from the tile's actions menu. */
-  onDelete: () => void
+  /**
+   * Called when the user picks Edit from the tile's actions menu. Without
+   * it, the menu offers no Edit item.
+   */
+  onEdit?: () => void
+  /**
+   * Called when the user picks Delete from the tile's actions menu. Without
+   * it, the menu offers no Delete item.
+   */
+  onDelete?: () => void
 }
 
 /**
  * A card in the All Cards grid: the question, the answer, and a footer with
  * the category, the progress (or the Mastered badge at 5/5) and a "Card
  * actions" menu offering Edit and Delete. It only displays its props; the
- * app does the editing and deleting from `onEdit` and `onDelete`.
+ * app does the editing and deleting from `onEdit` and `onDelete`. Each menu
+ * item appears only when its callback is given, and with neither the tile
+ * has no actions menu: a read-only tile.
  *
  * The tile is an `<article>` named by its question, so in a grid of tiles
  * each "Card actions" button and progress bar sits in a named card.
@@ -50,6 +58,7 @@ function CardTile({
 }: CardTileProps) {
   const questionId = useId()
   const count = clampProgress(progress)
+  const hasActions = onEdit !== undefined || onDelete !== undefined
 
   return (
     <article
@@ -79,7 +88,12 @@ function CardTile({
             <span className="truncate">{category}</span>
           </Badge>
         </div>
-        <div className="flex flex-1 shrink-0 items-center border-r border-border px-200 py-150">
+        <div
+          className={cn(
+            'flex flex-1 shrink-0 items-center px-200 py-150',
+            hasActions && 'border-r border-border',
+          )}
+        >
           {count === MAX_PROGRESS ? (
             <Badge variant="mastered" icon={<IconCheck />}>
               Mastered {count}/{MAX_PROGRESS}
@@ -93,22 +107,28 @@ function CardTile({
             />
           )}
         </div>
-        <Menu>
-          <MenuTrigger
-            aria-label="Card actions"
-            className="flex shrink-0 cursor-pointer items-center justify-center px-200 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-background"
-          >
-            <IconKebab />
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem icon={<IconEdit />} onClick={onEdit}>
-              Edit
-            </MenuItem>
-            <MenuItem icon={<IconDelete />} onClick={onDelete}>
-              Delete
-            </MenuItem>
-          </MenuContent>
-        </Menu>
+        {hasActions && (
+          <Menu>
+            <MenuTrigger
+              aria-label="Card actions"
+              className="flex shrink-0 cursor-pointer items-center justify-center px-200 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-background"
+            >
+              <IconKebab />
+            </MenuTrigger>
+            <MenuContent align="end">
+              {onEdit && (
+                <MenuItem icon={<IconEdit />} onClick={onEdit}>
+                  Edit
+                </MenuItem>
+              )}
+              {onDelete && (
+                <MenuItem icon={<IconDelete />} onClick={onDelete}>
+                  Delete
+                </MenuItem>
+              )}
+            </MenuContent>
+          </Menu>
+        )}
       </div>
     </article>
   )
