@@ -86,6 +86,10 @@ describe('leaving with an unfinished Card', () => {
 
     studyLink().element().focus()
     await userEvent.keyboard('{Enter}')
+    // Opening the dialog schedules its initial focus asynchronously.
+    await expect
+      .element(leaveDialog().getByRole('button', { name: 'Stay' }))
+      .toHaveFocus()
     await userEvent.tab()
     await expect
       .element(leaveDialog().getByRole('button', { name: 'Discard and leave' }))
