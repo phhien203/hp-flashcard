@@ -124,8 +124,14 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
   }
 
   const empty = cards.isSuccess && total === 0
+  // Under Hide Mastered, an empty listing means no Cards only when there are
+  // none to hide: no Categories, or (when those fail to load) no Cards
+  // counted in the chosen ones.
   const noCards =
-    empty && (!filters.hideMastered || categories.data?.items.length === 0)
+    empty &&
+    (!filters.hideMastered ||
+      categories.data?.items.length === 0 ||
+      statistics.data?.total === 0)
   const single = total === 1
   const mastered = card !== undefined && card.progress >= MASTERED
   const busy = save.isPending
