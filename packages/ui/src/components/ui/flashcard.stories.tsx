@@ -70,6 +70,15 @@ export const Answer: Story = {
   },
 }
 
+/** Figma "Mastered": at 5/5 the Mastered badge replaces the progress bar. */
+export const Mastered: Story = {
+  args: { progress: 5 },
+  play: async ({ canvas }) => {
+    await expect(canvas.getAllByText('Mastered 5/5')[0]).toBeVisible()
+    await expect(canvas.queryByRole('progressbar')).toBeNull()
+  },
+}
+
 /** A long question wraps, and the card grows to fit it. */
 export const LongQuestion: Story = {
   args: {

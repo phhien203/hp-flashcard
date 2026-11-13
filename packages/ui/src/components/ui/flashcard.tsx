@@ -1,6 +1,7 @@
 import { useState, type ComponentProps, type ReactNode } from 'react'
 
 import { cn } from '../../lib/utils.js'
+import { IconCheck } from '../icons/icon-check.js'
 import { Badge } from './badge.js'
 import { clampProgress, MAX_PROGRESS } from './card-progress.js'
 import { FlashcardPattern, FlashcardSparkles } from './flashcard-decor.js'
@@ -13,7 +14,11 @@ interface FlashcardProps extends Omit<ComponentProps<'div'>, 'children'> {
   answer: ReactNode
   /** The card's category, shown as a Badge on both sides. */
   category: ReactNode
-  /** How many times the card was answered correctly, from 0 to 5. Values outside that range are clamped. */
+  /**
+   * How many times the card was answered correctly, from 0 to 5. Values
+   * outside that range are clamped. At 5 both sides show the Mastered badge
+   * instead of the progress bar.
+   */
   progress: number
   /** Whether the answer side shows. Set it to control the card; leave it out to let the card manage itself. */
   flipped?: boolean
@@ -62,19 +67,26 @@ function FlashcardFace({
       <div className="relative flex flex-col items-center gap-200 py-1000 md:py-1400">
         {children}
       </div>
-      <div className="relative flex items-center gap-100">
-        <Progress value={progress} max={MAX_PROGRESS} aria-label="Progress" />
-        <span className="text-preset-6 tabular-nums">
-          {progress}/{MAX_PROGRESS}
-        </span>
-      </div>
+      {progress === MAX_PROGRESS ? (
+        <Badge variant="mastered" icon={<IconCheck />} className="relative">
+          Mastered {progress}/{MAX_PROGRESS}
+        </Badge>
+      ) : (
+        <div className="relative flex items-center gap-100">
+          <Progress value={progress} max={MAX_PROGRESS} aria-label="Progress" />
+          <span className="text-preset-6 tabular-nums">
+            {progress}/{MAX_PROGRESS}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
 
 /**
  * The Study Mode card. The front is pink and shows the question, the back is
- * blue and shows the answer; both carry the category and the progress count.
+ * blue and shows the answer; both carry the category and the progress count,
+ * or the Mastered badge once the card is at 5/5.
  *
  * The whole face is one plain button, named "Show answer" or "Show
  * question" for what it does next. It has no `aria-pressed`, since a

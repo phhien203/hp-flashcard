@@ -158,7 +158,30 @@ describe('Flashcard', () => {
   it('clamps progress to 0–5', async () => {
     const screen = await renderCard({ progress: 9 })
 
-    await expect.element(screen.getByText('5/5').first()).toBeInTheDocument()
+    await expect
+      .element(screen.getByText('Mastered 5/5').first())
+      .toBeInTheDocument()
+  })
+
+  it('shows the Mastered badge instead of the progress bar at 5/5, on both sides', async () => {
+    const screen = await renderCard({ progress: 5 })
+
+    await expect.element(screen.getByText('Mastered 5/5').first()).toBeVisible()
+    expect(screen.container.querySelector('[role="progressbar"]')).toBeNull()
+
+    await screen.getByRole('button', { name: 'Show answer' }).click()
+
+    const back = screen.container.querySelector('[data-slot="flashcard-back"]')!
+    expect(back.textContent).toContain('Mastered 5/5')
+  })
+
+  it('keeps the progress bar below 5/5', async () => {
+    const screen = await renderCard({ progress: 4 })
+
+    expect(screen.container.textContent).not.toContain('Mastered')
+    await expect
+      .element(screen.getByRole('progressbar', { name: 'Progress' }).first())
+      .toHaveAttribute('aria-valuenow', '4')
   })
 
   it('is pink on the question side and blue on the answer side', async () => {
