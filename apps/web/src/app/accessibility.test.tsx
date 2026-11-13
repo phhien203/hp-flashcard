@@ -158,6 +158,14 @@ describe('axe on Card management', () => {
       .element(toast('Card created successfully. Your filters hide it.'))
       .toBeVisible()
 
+    // Visibility does not mean the fade-in has finished. Axe must measure
+    // the settled colors rather than the transient, translucent text.
+    await Promise.all(
+      toast('Card created successfully. Your filters hide it.')
+        .element()
+        .getAnimations()
+        .map((animation) => animation.finished),
+    )
     await expectNoAxeViolationsAfterTyping(outsideLandmarks)
   })
 
