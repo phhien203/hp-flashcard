@@ -47,7 +47,7 @@ export function DeleteCardDialog({
   const [open, setOpen] = useState(true)
   const [gone, setGone] = useState(false)
   const [error, setError] = useState<string>()
-  const remove = useDeleteCard()
+  const deletion = useDeleteCard()
 
   const finish = (outcome: 'deleted' | 'missing') => {
     setGone(true)
@@ -60,7 +60,7 @@ export function DeleteCardDialog({
       open={open}
       onOpenChange={(next) => {
         // A pending deletion can't be called off.
-        if (!next && !remove.isPending) setOpen(false)
+        if (!next && !deletion.isPending) setOpen(false)
       }}
       onOpenChangeComplete={(isOpen) => {
         if (!isOpen) onClosed()
@@ -75,16 +75,16 @@ export function DeleteCardDialog({
         </AlertDialogHeader>
         <FormError message={error} />
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={remove.isPending}>
+          <AlertDialogCancel disabled={deletion.isPending}>
             Cancel
           </AlertDialogCancel>
           <Button
-            disabled={remove.isPending}
+            disabled={deletion.isPending}
             focusableWhenDisabled
             onClick={() => {
-              if (remove.isPending) return
+              if (deletion.isPending) return
               setError(undefined)
-              remove.mutate(card.id, {
+              deletion.mutate(card.id, {
                 onSuccess: () => finish('deleted'),
                 onError: (failure) => {
                   if (isNotFound(failure)) finish('missing')
@@ -96,7 +96,7 @@ export function DeleteCardDialog({
               })
             }}
           >
-            {remove.isPending ? 'Deleting Card…' : 'Delete Card'}
+            {deletion.isPending ? 'Deleting Card…' : 'Delete Card'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
