@@ -190,6 +190,23 @@ describe('empty states', () => {
     await expect.element(page.getByText('No cards yet.')).toBeVisible()
   })
 
+  it('with no Cards and Hide Mastered on: still no Cards, even when the Categories fail to load', async () => {
+    SCENARIOS.empty(mockStore)
+    worker.use(...SCENARIOS['categories-error']())
+    // Open Study Mode first, so it makes the first Category request.
+    window.location.hash = '#/study'
+    await renderApp()
+    await expect
+      .element(page.getByText('Categories could not be loaded.'))
+      .toBeVisible()
+
+    await hideMastered().click()
+
+    await expect
+      .element(page.getByRole('heading', { name: 'No cards to study' }))
+      .toBeVisible()
+  })
+
   it('with every Card Mastered and hidden: all caught up, until Hide Mastered is off', async () => {
     mockStore.reset(seedCards(2, 5))
     await renderApp()
