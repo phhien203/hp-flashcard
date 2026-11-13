@@ -7,6 +7,7 @@ import {
 } from 'msw'
 
 import type { ApiErrorBody } from '../api/types.js'
+import { notFound } from './handlers.js'
 import type { MockStore } from './store.js'
 
 /**
@@ -63,7 +64,9 @@ export const SCENARIOS = {
   ],
   /** The first Card edit finds no such Card, as if it had been deleted. */
   'edit-not-found': () => [
-    writeFailsOnce('patch', '/api/cards/:cardId', notFound),
+    writeFailsOnce('patch', '/api/cards/:cardId', ({ params }) =>
+      notFound(String(params.cardId)),
+    ),
   ],
   /** The first Card deletion fails with a server error; later ones work. */
   'delete-error': () => [
@@ -75,8 +78,9 @@ export const SCENARIOS = {
    */
   'delete-not-found': (store: MockStore) => [
     writeFailsOnce('delete', '/api/cards/:cardId', ({ params }) => {
-      store.deleteCard(String(params.cardId))
-      return notFound()
+      const cardId = String(params.cardId)
+      store.deleteCard(cardId)
+      return notFound(cardId)
     }),
   ],
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
@@ -87,12 +91,6 @@ const serverError = () =>
   HttpResponse.json<ApiErrorBody>(
     { code: 'server_error', message: 'The server failed.' },
     { status: 500 },
-  )
-
-const notFound = () =>
-  HttpResponse.json<ApiErrorBody>(
-    { code: 'not_found', message: 'No Card has this id.' },
-    { status: 404 },
   )
 
 /** Fails the first Card listing whose offset matches, then lets them through. */

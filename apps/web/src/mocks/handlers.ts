@@ -25,7 +25,8 @@ const FIELDS = ['question', 'answer', 'category'] as const
 const invalid = (message: string, fieldErrors: Record<string, string>) =>
   error(400, { code: 'validation_failed', message, fieldErrors })
 
-const notFound = (cardId: string) =>
+/** The backend's answer when no Card has this id. */
+export const notFound = (cardId: string) =>
   error(404, { code: 'not_found', message: `No Card has the id "${cardId}".` })
 
 /**
