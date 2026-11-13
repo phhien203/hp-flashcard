@@ -9,10 +9,13 @@ import {
   cardList,
   createCard,
   createForm,
+  deleteButton,
+  deleteDialog,
   editDialog,
   expectShowing,
   fillFields,
   hideMastered,
+  openDelete,
   openEdit,
   toast,
   toggleCategories,
@@ -46,6 +49,14 @@ async function expectNoAxeViolationsAfterTyping(options: axe.RunOptions = {}) {
   if (server.browser === 'firefox') return
   await expectNoAxeViolations(options)
 }
+
+/**
+ * Like `expectNoAxeViolations`, with a modal open over a page of text
+ * fields. Firefox's content process crashes there too (seen with the delete
+ * confirmation over the create form, with nothing typed), so these checks
+ * run in Chromium and WebKit only; the interactions still run in Firefox.
+ */
+const expectNoAxeViolationsInModal = expectNoAxeViolationsAfterTyping
 
 describe('axe', () => {
   it('finds no violations on All Cards', async () => {
@@ -125,6 +136,18 @@ describe('axe on Card management', () => {
       .element(page.getByRole('alertdialog', { name: 'Discard your changes?' }))
       .toBeVisible()
     await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+  })
+
+  it('finds no violations in the delete confirmation and its error', async () => {
+    worker.use(...SCENARIOS['delete-error']())
+    await renderApp()
+    await expectShowing(12, 40)
+    await openDelete('What is the capital of Australia?')
+    await expectNoAxeViolationsInModal(outsideLandmarks)
+
+    await deleteButton().click()
+    await expect.element(deleteDialog().getByRole('alert')).toBeVisible()
+    await expectNoAxeViolationsInModal(outsideLandmarks)
   })
 
   it('finds no violations with a Show card notification', async () => {
@@ -294,4 +317,29 @@ describe('responsive layout', () => {
       expect(dialog.bottom).toBeLessThanOrEqual(window.innerHeight)
     },
   )
+
+  it.for([
+    { name: 'mobile', width: 375, height: 667 },
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'desktop', width: 1440, height: 900 },
+  ])('fits the delete confirmation on $name', async ({ width, height }) => {
+    await page.viewport(width, height)
+    await renderApp()
+    await expectShowing(12, 40)
+
+    await openDelete('What is the capital of Australia?')
+
+    const dialog = deleteDialog().element().getBoundingClientRect()
+    expect(dialog.left).toBeGreaterThanOrEqual(0)
+    expect(dialog.right).toBeLessThanOrEqual(window.innerWidth)
+    expect(dialog.top).toBeGreaterThanOrEqual(0)
+    expect(dialog.bottom).toBeLessThanOrEqual(window.innerHeight)
+    for (const name of ['Cancel', 'Delete Card']) {
+      const button = deleteDialog()
+        .getByRole('button', { name })
+        .element()
+        .getBoundingClientRect()
+      expect(button.right).toBeLessThanOrEqual(dialog.right)
+    }
+  })
 })

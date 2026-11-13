@@ -119,10 +119,11 @@ export async function categoryMenuItems() {
 }
 
 /**
- * A handler that holds Card writes (`post` creates, `patch` edits) until
- * `release()`, to see pending states deterministically. It counts them.
+ * A handler that holds Card writes (`post` creates, `patch` edits, `delete`
+ * deletes) until `release()`, to see pending states deterministically. It
+ * counts them.
  */
-export function holdWrites(method: 'post' | 'patch') {
+export function holdWrites(method: 'post' | 'patch' | 'delete') {
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
   const counter = { count: 0 }
@@ -141,4 +142,29 @@ export async function expectRevealed(question: string) {
     .poll(() => document.activeElement?.contains(cardTile(question).query()))
     .toBe(true)
   await expect.element(cardTile(question)).toBeInViewport()
+}
+
+/** The "Delete this card?" confirmation. */
+export const deleteDialog = () =>
+  page.getByRole('alertdialog', { name: 'Delete this card?' })
+
+/** The confirmation's Delete Card button, also while it is pending. */
+export const deleteButton = () =>
+  deleteDialog().getByRole('button', { name: /^Delet(e|ing) Card/ })
+
+/** Opens the delete confirmation of the Card with this question. */
+export async function openDelete(question: string) {
+  await cardTile(question).getByRole('button', { name: 'Card actions' }).click()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect.element(deleteDialog()).toBeVisible()
+}
+
+/** Deletes the Card with this question, and waits for the confirmation. */
+export async function deleteCard(question: string) {
+  await openDelete(question)
+  await deleteButton().click()
+  await expect.element(deleteDialog()).not.toBeInTheDocument()
+  // Earlier deletions' toasts may still be showing.
+  await expect.element(toast('Card deleted successfully.').last()).toBeVisible()
+  await expect.element(cardTile(question)).not.toBeInTheDocument()
 }

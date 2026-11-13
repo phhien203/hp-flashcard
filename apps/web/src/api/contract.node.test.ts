@@ -67,7 +67,7 @@ describe('the mock backend', () => {
 
   /** Fetches `path` and checks status and body against the contract. */
   async function expectConforms(
-    method: 'get' | 'post' | 'patch',
+    method: 'get' | 'post' | 'patch' | 'delete',
     pathTemplate: string,
     path: string,
     status: number,
@@ -94,6 +94,11 @@ describe('the mock backend', () => {
     expect(response.status).toBe(status)
     const definition = operation.responses[String(status)]
     expect(definition, `${status} is not documented`).toBeDefined()
+    if (!definition.content) {
+      // No content: the response must have no body.
+      expect(await response.text()).toBe('')
+      return undefined
+    }
     const body: unknown = await response.json()
     const check = ajv.compile(definition.content['application/json'].schema)
     expect(check(body) ? [] : check.errors).toEqual([])
@@ -265,5 +270,38 @@ describe('the mock backend', () => {
       { question: 'Q?' },
     )
     expect(error).toMatchObject({ code: 'not_found' })
+  })
+
+  it('deletes a Card, with no content', async () => {
+    await expectConforms(
+      'delete',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      204,
+    )
+    await expectConforms(
+      'get',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      404,
+    )
+  })
+
+  it('answers 404 when deleting an unknown or deleted Card', async () => {
+    await expectConforms(
+      'delete',
+      '/api/cards/{cardId}',
+      '/api/cards/card-01',
+      204,
+    )
+    for (const id of ['card-01', 'nope']) {
+      const error = await expectConforms(
+        'delete',
+        '/api/cards/{cardId}',
+        `/api/cards/${id}`,
+        404,
+      )
+      expect(error).toMatchObject({ code: 'not_found' })
+    }
   })
 })
