@@ -164,6 +164,17 @@ export function createApp({
     clerkWebhook(c, { now: now(), log }),
   )
 
+  // Public operational endpoint: no identity or Collection data.
+  // Read a schema table, not merely SELECT 1, to detect a missing migration.
+  api.get('/health', async (c) => {
+    await c.env.DB.prepare('SELECT 1 FROM deleted_identities LIMIT 1').first()
+    return c.json({
+      status: 'ok',
+      version: c.env.WORKER_VERSION?.id ?? 'local',
+      commit: c.env.WORKER_VERSION?.tag ?? 'local',
+    })
+  })
+
   api.use('*', requireSession)
   // Writes, once authenticated: the per-account rate limit, then a bounded
   // body. A refused request reads no body and writes nothing.

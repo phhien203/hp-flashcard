@@ -1,0 +1,10 @@
+{
+  "compatibleWithCommit": null,
+  "compatibility": "Initial schema only: there is no previously deployed application. Migrations 0000-0003 are the local-D1-tested baseline from #60-#62. When migrations change, set compatibleWithCommit to the prior Worker compatibility baseline, preserve historical SQL byte-for-byte, and record evidence of old-Worker read/write tests against the expanded schema. Ordinary app pushes need no ledger update. No drop, rename, required-column addition, or incompatible trigger change is approved by this initial review.",
+  "files": {
+    "0000_collections.sql": "8d1fc69c92421b81e1f1559e64f1b027927ca25bc069b7982947cda1f09ea258",
+    "0001_card_quota.sql": "cd7d376083050e23caffef46f785243aae0a641310b83c00594c6e04e13f4d18",
+    "0002_lifecycle_and_limits.sql": "9a7df04bea38a1db279e2f4a755720779f69f1025e56549d8109839613fcf99a",
+    "0003_deleted_identity_guards.sql": "50eca379acab94afc0ef543ca99ad31862ad92a03e85dc5d2971aaaf0b3cde67"
+  }
+}

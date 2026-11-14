@@ -24,7 +24,7 @@ The app runs in one of two explicit modes. Nothing falls back from one to the ot
 
 ## Human-only setup
 
-Credentials and accounts can't be created from this repository. Nothing here is configured yet; these are the steps a person with access takes.
+Provider provisioning requires operator access. Confirm existing instances and resources before creating anything; these are the setup steps, not evidence they have been completed.
 
 **Clerk (development instance, for local work):**
 
@@ -35,9 +35,9 @@ Credentials and accounts can't be created from this repository. Nothing here is 
 5. **API keys:** copy the publishable key (`pk_test_…`) to `VITE_CLERK_PUBLISHABLE_KEY`, and the **JWT public key (PEM)** to `CLERK_JWT_KEY` (or the secret key, `sk_test_…`, to `CLERK_SECRET_KEY`).
 6. **Webhooks:** add an endpoint for `https://<the Worker's origin>/api/webhooks/clerk`, subscribed to **`user.deleted`** only, and copy its signing secret (`whsec_…`) to `CLERK_WEBHOOK_SIGNING_SECRET`. A local Worker isn't reachable from Clerk; use a tunnel, or Clerk's "Testing" tab against a deployed one.
 
-**Clerk (production instance)**, when the deployment slice ships: the same settings, plus the `flashcard.hien.page` domain; its keys go only into Cloudflare secrets, never into local files.
+**Production:** Cloudflare Workers Builds listens to `main` with watch path `apps/web/*`, builds with `pnpm web:remote-build` and deploys with `pnpm web:remote-deploy` from the workspace root. No Cloudflare credentials go into GitHub Actions. See [the release and rollback runbook](../../docs/web-release.md) for dashboard setup, Clerk production URLs/secrets, migrations, verification and concurrency limitations. Production is the explicit `--env production` Wrangler configuration, not the top-level local configuration.
 
-**Cloudflare**, when the deployment slice ships: create the production D1 database (`wrangler d1 create hp-flashcard`) and put its id in `wrangler.jsonc` (the checked-in id is a placeholder that matches no database); set the Worker secrets (`wrangler secret put CLERK_JWT_KEY`, `CLERK_AUTHORIZED_PARTIES=https://flashcard.hien.page`). This slice deploys nothing.
+Production D1 `hp-flashcard` is provisioned and bound in `env.production`; the top-level database ID remains a local-only placeholder. Production migrations and Worker deployment are separate steps, not performed by database provisioning.
 
 ## Database
 

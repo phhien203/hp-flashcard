@@ -12,7 +12,8 @@ info:
     exactly one **Category**; **Progress** runs from 0 to 5, and a Card at
     5/5 is **Mastered**. Categories exist only through Cards.
 
-    Every operation acts on the signed-in person's private **Collection**:
+    Except the public operational health endpoint and signed Clerk webhook,
+    every operation acts on the signed-in person's private **Collection**:
     send a Clerk session token as `Authorization: Bearer <token>`. The owner
     is always the verified token's subject; no request field can name
     another. A missing, expired, malformed or otherwise invalid token gets
@@ -74,6 +75,30 @@ tags:
   - name: Webhooks
 
 paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Verify serving version and database schema availability
+      security: []
+      responses:
+        '200':
+          description: Worker and database schema are available; contains no private data.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version, commit]
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  version:
+                    type: string
+                  commit:
+                    type: string
+        '500':
+          $ref: '#/components/responses/ServerError'
   /api/cards:
     get:
       tags: [Cards]
