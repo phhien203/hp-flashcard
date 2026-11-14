@@ -15,6 +15,7 @@ import { CreateCardForm } from './CreateCardForm.js'
 import { MASTERED } from '../domain/progress.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
+import { useKeptEdit } from './kept-edit.js'
 import { Notice } from './Notice.js'
 import {
   fetchCard,
@@ -47,7 +48,10 @@ export function AllCardsPage({
   onHasDraftChange,
 }: AllCardsPageProps) {
   const [selectedFilters, setFilters] = useState(INITIAL_FILTERS)
-  const [editing, setEditing] = useState<Card>()
+  // An edit kept from this account's previous session reopens at once.
+  const { restored } = useKeptEdit()
+  const [resumed, setResumed] = useState(restored)
+  const [editing, setEditing] = useState<Card | undefined>(restored?.card)
   const [deleting, setDeleting] = useState<{
     card: Card
     /** The Cards beside it when the dialog opened, to take focus after. */
@@ -310,8 +314,12 @@ export function AllCardsPage({
         <EditCardDialog
           key={editing.id}
           card={editing}
+          resumed={resumed?.card === editing ? resumed : undefined}
           onSaved={(card) => confirmSaved(card, 'updated')}
-          onClosed={() => setEditing(undefined)}
+          onClosed={() => {
+            setResumed(undefined)
+            setEditing(undefined)
+          }}
           returnFocusTo={() => cardActions(editing.id)}
         />
       )}

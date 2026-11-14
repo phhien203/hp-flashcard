@@ -29,6 +29,22 @@ info:
     surrogate or a NUL character (U+0000) is rejected. Text is stored as sent, without Unicode
     normalization.
 
+    Every Card has a `contentVersion`, which each content edit advances.
+    Edits and deletions name the version they were based on in `If-Match`
+    (e.g. `If-Match: "3"`); when the Card has changed since, they answer
+    `409` with `version_conflict` and change nothing, so no device silently
+    overwrites another's edit. Fetch the Card again to review it.
+
+    Every write takes an `Idempotency-Key`. For 24 hours the backend
+    remembers a completed write under your account, the operation and the
+    key: repeating it answers the original success again, marked
+    `Idempotent-Replayed: true`, without applying it twice, even if the
+    Card has since changed or been deleted. A replayed response describes
+    the past: don't let it replace newer data you hold.
+
+    Responses are private to the signed-in person: they carry
+    `Cache-Control: private, no-store`, so no shared cache keeps them.
+
     Operations this backend does not support yet answer `501` with
     `not_implemented`; they never report a write that did not happen.
 servers:
@@ -131,16 +147,7 @@ paths:
         different body answers `422`. After 24 hours the key is forgotten,
         and a request with it creates a new Card.
       parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          description: |
-            Identifies this intended creation across retries: 16 to 128
-            letters, digits, `-` or `_`, such as a UUID. Keys are scoped to
-            your account.
-          schema:
-            type: string
-            pattern: '^[A-Za-z0-9_-]{16,128}$'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -156,12 +163,7 @@ paths:
               schema:
                 type: string
             Idempotent-Replayed:
-              description: |
-                `true` when this repeats the result of an earlier request
-                with the same key.
-              schema:
-                type: string
-                enum: ['true']
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -242,10 +244,26 @@ paths:
       operationId: updateCard
       summary: Edit a Card's content or Category
       description: |
-        Updates the given fields, with the same rules as creation. The Card
-        keeps its identifier, Progress and place in the default order. A
-        Category left without Cards ceases to exist. A `400` names each
-        rejected field in `fieldErrors`.
+        Updates the given fields, with the same rules as creation, if the
+        Card is still at the `contentVersion` named in `If-Match`, and
+        advances its `contentVersion`. The Card keeps its identifier,
+        Progress and place in the default order. A Category left without
+        Cards ceases to exist. A `400` names each rejected field in
+        `fieldErrors`.
+
+        If the Card has been edited since (another device, say), the edit
+        answers `409` with `version_conflict` and changes nothing: of two
+        edits based on the same version, at most one succeeds. A Card that
+        doesn't exist, or isn't yours, answers `404`; a stale edit never
+        recreates a deleted Card.
+
+        Retrying with the same `Idempotency-Key` and request answers the
+        original `200` again (`Idempotent-Replayed: true`) for 24 hours,
+        even after later edits or the Card's deletion. That Card is as it
+        was then: refetch rather than display it over newer data.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -254,7 +272,10 @@ paths:
               $ref: '#/components/schemas/CardPatch'
       responses:
         '200':
-          description: The updated Card.
+          description: The updated Card, or the one this key updated before.
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -265,26 +286,49 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
         '500':
           $ref: '#/components/responses/ServerError'
-        '501':
-          $ref: '#/components/responses/NotImplemented'
     delete:
       tags: [Cards]
       operationId: deleteCard
       summary: Delete a Card
-      description: A Category left without Cards ceases to exist.
+      description: |
+        Permanently deletes the Card and its Progress, if it is still at the
+        `contentVersion` named in `If-Match`. A Category left without Cards
+        ceases to exist, and the Card's place in the 1,000-Card quota is
+        free at once. There is no trash and no restore.
+
+        If the Card's content has been edited since, the deletion answers
+        `409` with `version_conflict` and deletes nothing. A Card that
+        doesn't exist, or isn't yours, answers `404`.
+
+        Retrying with the same `Idempotency-Key` and `If-Match` answers the
+        original `204` again (`Idempotent-Replayed: true`) for 24 hours.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
       responses:
         '204':
-          description: The Card was deleted.
+          description: The Card was deleted, by this request or by this key before.
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
         '500':
           $ref: '#/components/responses/ServerError'
-        '501':
-          $ref: '#/components/responses/NotImplemented'
 
   /api/cards/{cardId}/progress:
     parameters:
@@ -362,6 +406,13 @@ components:
       minimum: 0
       maximum: 4294967295
       description: A 32-bit unsigned shuffle seed.
+    ContentVersion:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+      description: |
+        The version of a Card's content (question, answer, Category):
+        1 when created, one more after each edit. Progress changes leave it.
     Progress:
       type: integer
       minimum: 0
@@ -380,7 +431,7 @@ components:
     Card:
       type: object
       additionalProperties: false
-      required: [id, question, answer, category, progress]
+      required: [id, question, answer, category, progress, contentVersion]
       properties:
         id:
           $ref: '#/components/schemas/CardId'
@@ -394,6 +445,8 @@ components:
           $ref: '#/components/schemas/CategoryRef'
         progress:
           $ref: '#/components/schemas/Progress'
+        contentVersion:
+          $ref: '#/components/schemas/ContentVersion'
     CardPage:
       type: object
       additionalProperties: false
@@ -516,6 +569,7 @@ components:
             - not_found
             - quota_exceeded
             - idempotency_key_reused
+            - version_conflict
             - server_error
             - not_implemented
         message:
@@ -532,6 +586,39 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: A Clerk session token for the signed-in person.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Identifies this intended write across retries: 16 to 128 letters,
+        digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+        you mean to make, and the same key when retrying it. Keys are scoped
+        to your account and the operation.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{16,128}$'
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        The Card's `contentVersion` this write is based on, as a quoted
+        entity tag: `"3"`.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]{0,15}"$'
+
+  headers:
+    IdempotentReplayed:
+      description: |
+        `true` when this repeats the result of an earlier request with the
+        same key.
+      schema:
+        type: string
+        enum: ['true']
 
   responses:
     ValidationFailed:
@@ -556,6 +643,14 @@ components:
             $ref: '#/components/schemas/Error'
     QuotaExceeded:
       description: The Collection already holds 1,000 Cards.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    VersionConflict:
+      description: |
+        The Card has changed since the version named in `If-Match`; nothing
+        was changed. Fetch it again to review the latest version.
       content:
         application/json:
           schema:

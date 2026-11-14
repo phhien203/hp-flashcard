@@ -9,6 +9,8 @@ import type {
 } from '../api/types.js'
 import {
   creationFingerprint,
+  deletionFingerprint,
+  editFingerprint,
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENCY_KEY_MESSAGE,
   IDEMPOTENCY_KEY_PATTERN,
@@ -19,11 +21,17 @@ import {
   parseCardBody,
   parseCardListQuery,
   parseCategoryFilter,
+  parseVersionedWriteHeaders,
   type Parsed,
 } from '../domain/requests.js'
 import { MASTERED } from '../domain/progress.js'
 import { mockOwnerOf } from './identity.js'
-import { mockBackend, type MockStore, type WriteResult } from './store.js'
+import {
+  mockBackend,
+  type MockStore,
+  type VersionedOutcome,
+  type WriteResult,
+} from './store.js'
 
 const error = (status: number, body: ApiErrorBody) =>
   HttpResponse.json(body, { status })
@@ -63,6 +71,14 @@ const keyReused = () =>
     message: 'This Idempotency-Key was used for a different request.',
   })
 
+/** The backend's answer when a Card has changed since the version a write names. */
+export const versionConflict = () =>
+  error(409, {
+    code: 'version_conflict',
+    message:
+      'This Card has changed since that version. Fetch it again to review it.',
+  })
+
 /** The backend's answer when no Card has this id. */
 export const notFound = (cardId: string) =>
   error(404, { code: 'not_found', message: `No Card has the id "${cardId}".` })
@@ -86,6 +102,23 @@ function writeResponse(result: WriteResult, cardId: string, status = 200) {
   }
   if (result.reason === 'not_found') return notFound(cardId)
   return invalid('The Card is invalid.', result.fieldErrors)
+}
+
+/** Answers an edit or deletion the store refused. */
+function refused(
+  result: Exclude<VersionedOutcome<unknown>, { ok: true }>,
+  cardId: string,
+) {
+  switch (result.reason) {
+    case 'invalid':
+      return invalid('The Card is invalid.', result.fieldErrors)
+    case 'not_found':
+      return notFound(cardId)
+    case 'conflict':
+      return versionConflict()
+    case 'key_reused':
+      return keyReused()
+  }
 }
 
 /** Reads a `ProgressInput` body: `{ progress }`, a whole number from 0 to 5. */
@@ -179,13 +212,30 @@ export const createHandlers = (origin = '') => [
   http.patch<{ cardId: string }>(
     `${origin}/api/cards/:cardId`,
     owned(async ({ params, request }, store) => {
-      if (!store.getCard(params.cardId)) return notFound(params.cardId)
-      const body = await readCardBody(request, { required: false })
-      if (!body.ok) return invalid(body.error, body.fieldErrors)
-      return writeResponse(
-        store.updateCard(params.cardId, body.value),
-        params.cardId,
+      const { cardId } = params
+      const headers = parseVersionedWriteHeaders((name) =>
+        request.headers.get(name),
       )
+      const body = await readCardBody(request, { required: false })
+      if (!headers.ok)
+        return invalid(headers.error, {
+          ...(body.ok ? {} : body.fieldErrors),
+          ...headers.fieldErrors,
+        })
+      if (!body.ok) return invalid(body.error, body.fieldErrors)
+      const { key, contentVersion } = headers.value
+      const result = store.updateCardOnce(cardId, body.value, {
+        contentVersion,
+        key,
+        fingerprint: editFingerprint(cardId, contentVersion, body.value),
+      })
+      if (result.ok)
+        return HttpResponse.json<Card>(result.value, {
+          headers: result.replayed
+            ? { [IDEMPOTENT_REPLAYED_HEADER]: 'true' }
+            : undefined,
+        })
+      return refused(result, cardId)
     }),
   ),
 
@@ -203,9 +253,26 @@ export const createHandlers = (origin = '') => [
 
   http.delete<{ cardId: string }>(
     `${origin}/api/cards/:cardId`,
-    owned(({ params }, store) => {
-      if (!store.deleteCard(params.cardId)) return notFound(params.cardId)
-      return new HttpResponse(null, { status: 204 })
+    owned(({ params, request }, store) => {
+      const { cardId } = params
+      const headers = parseVersionedWriteHeaders((name) =>
+        request.headers.get(name),
+      )
+      if (!headers.ok) return invalid(headers.error, headers.fieldErrors)
+      const { key, contentVersion } = headers.value
+      const result = store.deleteCardOnce(cardId, {
+        contentVersion,
+        key,
+        fingerprint: deletionFingerprint(cardId, contentVersion),
+      })
+      if (result.ok)
+        return new HttpResponse(null, {
+          status: 204,
+          headers: result.replayed
+            ? { [IDEMPOTENT_REPLAYED_HEADER]: 'true' }
+            : undefined,
+        })
+      return refused(result, cardId)
     }),
   ),
 

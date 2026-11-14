@@ -94,6 +94,13 @@ export function saveErrorOf(error: unknown): {
         message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
       }
     }
+    if (error.body?.code === 'version_conflict') {
+      return {
+        fieldErrors: {},
+        message:
+          'This card was changed on another device, so your changes weren’t saved.',
+      }
+    }
     if (error.status === 501) {
       return {
         fieldErrors: {},
@@ -101,11 +108,29 @@ export function saveErrorOf(error: unknown): {
       }
     }
   }
+  if (isNetworkFailure(error)) {
+    return {
+      fieldErrors: {},
+      message: OFFLINE_MESSAGE,
+    }
+  }
   return {
     fieldErrors: {},
     message: 'Your card could not be saved. Please try again.',
   }
 }
+
+/** Why a write that never got an answer failed: no connection. */
+export const OFFLINE_MESSAGE =
+  'Your card could not be saved: you’re offline or the server can’t be reached. Check your connection and try again.'
+
+/**
+ * Whether a write failed for want of a connection: `fetch` rejects with a
+ * `TypeError` when no response arrives, and nothing is queued for later.
+ */
+export const isNetworkFailure = (error: unknown) =>
+  error instanceof TypeError ||
+  (typeof navigator !== 'undefined' && navigator.onLine === false)
 
 export interface CardFieldsProps {
   draft: CardDraft
@@ -204,11 +229,23 @@ export function useCardDraft(initial: CardDraft) {
     return result.ok ? result.input : undefined
   }
 
-  const reset = () => {
-    setDraft(initial)
+  /** Replaces the whole draft, clearing every error. */
+  const replace = (next: CardDraft) => {
+    setDraft(next)
     setErrors({})
     setFormError(undefined)
   }
 
-  return { draft, errors, formError, change, check, showSaveError, reset }
+  const reset = () => replace(initial)
+
+  return {
+    draft,
+    errors,
+    formError,
+    change,
+    check,
+    showSaveError,
+    replace,
+    reset,
+  }
 }

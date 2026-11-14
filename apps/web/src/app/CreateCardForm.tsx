@@ -1,7 +1,7 @@
 import { Button } from '@hp-flashcard/ui'
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId } from 'react'
 
-import type { Card, CardInput } from '../api/types.js'
+import type { Card } from '../api/types.js'
 import {
   CardFields,
   EMPTY_DRAFT,
@@ -9,6 +9,7 @@ import {
   hasContent,
   useCardDraft,
 } from './card-form.js'
+import { useIdempotencyKeys } from './idempotency-keys.js'
 import { useCreateCard } from './queries.js'
 
 export interface CreateCardFormProps {
@@ -51,14 +52,20 @@ export function CreateCardForm({
           if (create.isPending) return
           const input = form.check()
           if (!input) return
-          create.mutate(attempt.keyFor(input), {
-            onSuccess: (card) => {
-              attempt.done()
-              form.reset()
-              onCreated(card)
+          // A retry of the same Card repeats its key, so the backend
+          // creates it at most once.
+          const idempotencyKey = attempt.keyFor(JSON.stringify(input))
+          create.mutate(
+            { input, idempotencyKey },
+            {
+              onSuccess: ({ value: card }) => {
+                attempt.done()
+                form.reset()
+                onCreated(card)
+              },
+              onError: form.showSaveError,
             },
-            onError: form.showSaveError,
-          })
+          )
         }}
       >
         <CardFields
@@ -79,25 +86,4 @@ export function CreateCardForm({
       </form>
     </div>
   )
-}
-
-/**
- * One idempotency key per intended creation. Submitting the same Card again
- * after a failure (perhaps a lost response) reuses its key, so the backend
- * creates it at most once; once it is created, or the text changes, the
- * next submission is a new creation with a new key.
- */
-function useIdempotencyKeys() {
-  const pending = useRef<{ key: string; sent: string }>(undefined)
-  return {
-    keyFor(input: CardInput) {
-      const sent = JSON.stringify(input)
-      if (pending.current?.sent !== sent)
-        pending.current = { key: crypto.randomUUID(), sent }
-      return { input, idempotencyKey: pending.current.key }
-    },
-    done() {
-      pending.current = undefined
-    },
-  }
 }

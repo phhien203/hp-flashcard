@@ -90,17 +90,40 @@ export interface paths {
         post?: never;
         /**
          * Delete a Card
-         * @description A Category left without Cards ceases to exist.
+         * @description Permanently deletes the Card and its Progress, if it is still at the
+         *     `contentVersion` named in `If-Match`. A Category left without Cards
+         *     ceases to exist, and the Card's place in the 1,000-Card quota is
+         *     free at once. There is no trash and no restore.
+         *
+         *     If the Card's content has been edited since, the deletion answers
+         *     `409` with `version_conflict` and deletes nothing. A Card that
+         *     doesn't exist, or isn't yours, answers `404`.
+         *
+         *     Retrying with the same `Idempotency-Key` and `If-Match` answers the
+         *     original `204` again (`Idempotent-Replayed: true`) for 24 hours.
          */
         delete: operations["deleteCard"];
         options?: never;
         head?: never;
         /**
          * Edit a Card's content or Category
-         * @description Updates the given fields, with the same rules as creation. The Card
-         *     keeps its identifier, Progress and place in the default order. A
-         *     Category left without Cards ceases to exist. A `400` names each
-         *     rejected field in `fieldErrors`.
+         * @description Updates the given fields, with the same rules as creation, if the
+         *     Card is still at the `contentVersion` named in `If-Match`, and
+         *     advances its `contentVersion`. The Card keeps its identifier,
+         *     Progress and place in the default order. A Category left without
+         *     Cards ceases to exist. A `400` names each rejected field in
+         *     `fieldErrors`.
+         *
+         *     If the Card has been edited since (another device, say), the edit
+         *     answers `409` with `version_conflict` and changes nothing: of two
+         *     edits based on the same version, at most one succeeds. A Card that
+         *     doesn't exist, or isn't yours, answers `404`; a stale edit never
+         *     recreates a deleted Card.
+         *
+         *     Retrying with the same `Idempotency-Key` and request answers the
+         *     original `200` again (`Idempotent-Replayed: true`) for 24 hours,
+         *     even after later edits or the Card's deletion. That Card is as it
+         *     was then: refetch rather than display it over newer data.
          */
         patch: operations["updateCard"];
         trace?: never;
@@ -162,6 +185,11 @@ export interface components {
         CategoryId: string;
         /** @description A 32-bit unsigned shuffle seed. */
         ShuffleSeed: number;
+        /**
+         * @description The version of a Card's content (question, answer, Category):
+         *     1 when created, one more after each edit. Progress changes leave it.
+         */
+        ContentVersion: number;
         /** @description Study Progress; 5 means Mastered. */
         Progress: number;
         CategoryRef: {
@@ -174,6 +202,7 @@ export interface components {
             answer: string;
             category: components["schemas"]["CategoryRef"];
             progress: components["schemas"]["Progress"];
+            contentVersion: components["schemas"]["ContentVersion"];
         };
         CardPage: {
             items: components["schemas"]["Card"][];
@@ -231,7 +260,7 @@ export interface components {
         };
         Error: {
             /** @enum {string} */
-            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "server_error" | "not_implemented";
+            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "version_conflict" | "server_error" | "not_implemented";
             message: string;
             /** @description Messages keyed by body field or query parameter name. */
             fieldErrors?: {
@@ -279,6 +308,18 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description The Card has changed since the version named in `If-Match`; nothing
+         *     was changed. Fetch it again to review the latest version.
+         */
+        VersionConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The `Idempotency-Key` was used for a different request. */
         IdempotencyKeyReused: {
             headers: {
@@ -307,9 +348,28 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /**
+         * @description Identifies this intended write across retries: 16 to 128 letters,
+         *     digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+         *     you mean to make, and the same key when retrying it. Keys are scoped
+         *     to your account and the operation.
+         */
+        IdempotencyKey: string;
+        /**
+         * @description The Card's `contentVersion` this write is based on, as a quoted
+         *     entity tag: `"3"`.
+         */
+        IfMatch: string;
+    };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /**
+         * @description `true` when this repeats the result of an earlier request with the
+         *     same key.
+         */
+        IdempotentReplayed: "true";
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -357,11 +417,12 @@ export interface operations {
             query?: never;
             header: {
                 /**
-                 * @description Identifies this intended creation across retries: 16 to 128
-                 *     letters, digits, `-` or `_`, such as a UUID. Keys are scoped to
-                 *     your account.
+                 * @description Identifies this intended write across retries: 16 to 128 letters,
+                 *     digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+                 *     you mean to make, and the same key when retrying it. Keys are scoped
+                 *     to your account and the operation.
                  */
-                "Idempotency-Key": string;
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
             cookie?: never;
@@ -377,11 +438,7 @@ export interface operations {
                 headers: {
                     /** @description The Card's URL. */
                     Location?: string;
-                    /**
-                     * @description `true` when this repeats the result of an earlier request
-                     *     with the same key.
-                     */
-                    "Idempotent-Replayed"?: "true";
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -453,7 +510,20 @@ export interface operations {
     deleteCard: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Identifies this intended write across retries: 16 to 128 letters,
+                 *     digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+                 *     you mean to make, and the same key when retrying it. Keys are scoped
+                 *     to your account and the operation.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description The Card's `contentVersion` this write is based on, as a quoted
+                 *     entity tag: `"3"`.
+                 */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
             path: {
                 cardId: components["schemas"]["CardId"];
             };
@@ -461,23 +531,39 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The Card was deleted. */
+            /** @description The Card was deleted, by this request or by this key before. */
             204: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
             500: components["responses"]["ServerError"];
-            501: components["responses"]["NotImplemented"];
         };
     };
     updateCard: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Identifies this intended write across retries: 16 to 128 letters,
+                 *     digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+                 *     you mean to make, and the same key when retrying it. Keys are scoped
+                 *     to your account and the operation.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description The Card's `contentVersion` this write is based on, as a quoted
+                 *     entity tag: `"3"`.
+                 */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
             path: {
                 cardId: components["schemas"]["CardId"];
             };
@@ -489,9 +575,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The updated Card. */
+            /** @description The updated Card, or the one this key updated before. */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -501,8 +588,9 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
             500: components["responses"]["ServerError"];
-            501: components["responses"]["NotImplemented"];
         };
     };
     setCardProgress: {

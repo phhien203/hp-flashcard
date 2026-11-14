@@ -26,6 +26,7 @@ interface StoredCard {
   answer: string
   categoryId: string
   progress: number
+  contentVersion: number
 }
 
 export type WriteResult =
@@ -38,6 +39,19 @@ export type CreateResult =
   | (WriteResult & { replayed?: boolean })
   | { ok: false; reason: 'quota_exceeded' }
   | { ok: false; reason: 'key_reused' }
+
+/** How an edit or deletion naming a version and a key went. */
+export type VersionedOutcome<T> =
+  | { ok: true; value: T; replayed: boolean }
+  | { ok: false; reason: 'invalid'; fieldErrors: CardTextErrors }
+  | { ok: false; reason: 'not_found' | 'conflict' | 'key_reused' }
+
+/** What an edit or deletion names besides its fields. */
+export interface VersionedRequest {
+  contentVersion: number
+  key: string
+  fingerprint: string
+}
 
 /**
  * The mock backend's in-memory data. It lives as long as the page: route
@@ -52,6 +66,9 @@ export class MockStore {
   #nextCardId = 1
   /** Completed creations by idempotency key. */
   #creations = new Map<string, { fingerprint: string; card: Card }>()
+  /** Completed edits and deletions by idempotency key. */
+  #edits = new Map<string, { fingerprint: string; card: Card }>()
+  #deletions = new Map<string, { fingerprint: string }>()
 
   constructor(seed: readonly SeedCard[] = fixture) {
     this.reset(seed)
@@ -64,6 +81,8 @@ export class MockStore {
     this.#nextCategoryId = 1
     this.#nextCardId = 1
     this.#creations.clear()
+    this.#edits.clear()
+    this.#deletions.clear()
     for (const card of seed) {
       this.#cards.push({
         id: card.id,
@@ -71,6 +90,7 @@ export class MockStore {
         answer: card.answer,
         categoryId: this.#categoryFor(card.category).id,
         progress: card.progress,
+        contentVersion: 1,
       })
     }
   }
@@ -96,6 +116,7 @@ export class MockStore {
       answer: card.answer,
       category: { id: category.id, name: category.name },
       progress: card.progress,
+      contentVersion: card.contentVersion,
     }
   }
 
@@ -168,6 +189,7 @@ export class MockStore {
       answer: trimmed.answer,
       categoryId: this.#categoryFor(trimmed.category).id,
       progress: 0,
+      contentVersion: 1,
     }
     this.#cards.unshift(card)
     return { ok: true, card: this.#toCard(card) }
@@ -201,9 +223,64 @@ export class MockStore {
   }
 
   /**
-   * Updates the given fields with the same rules as creation. The Card
-   * keeps its id, Progress and place in the default order; a Category left
-   * without Cards ceases to exist.
+   * Edits a Card as the API does: only if it is still at the request's
+   * `contentVersion`, and at most once per idempotency `key`. Repeating a
+   * key with the same `fingerprint` answers the Card as that edit left it,
+   * even after later writes; reusing it for another request is refused.
+   */
+  updateCardOnce(
+    id: string,
+    fields: Partial<CardText>,
+    { contentVersion, key, fingerprint }: VersionedRequest,
+  ): VersionedOutcome<Card> {
+    // As the Worker does: invalid text first, then the key, then the Card.
+    const checked = checkCardText(fields)
+    if (!checked.ok)
+      return { ok: false, reason: 'invalid', fieldErrors: checked.errors }
+    const earlier = this.#edits.get(key)
+    if (earlier) {
+      return earlier.fingerprint === fingerprint
+        ? { ok: true, value: earlier.card, replayed: true }
+        : { ok: false, reason: 'key_reused' }
+    }
+    const current = this.#cards.find((c) => c.id === id)
+    if (!current) return { ok: false, reason: 'not_found' }
+    if (current.contentVersion !== contentVersion)
+      return { ok: false, reason: 'conflict' }
+    const result = this.updateCard(id, fields)
+    if (!result.ok) return result
+    this.#edits.set(key, { fingerprint, card: result.card })
+    return { ok: true, value: result.card, replayed: false }
+  }
+
+  /**
+   * Deletes a Card as the API does: only if it is still at the request's
+   * `contentVersion`, and at most once per idempotency `key`.
+   */
+  deleteCardOnce(
+    id: string,
+    { contentVersion, key, fingerprint }: VersionedRequest,
+  ): VersionedOutcome<null> {
+    const earlier = this.#deletions.get(key)
+    if (earlier) {
+      return earlier.fingerprint === fingerprint
+        ? { ok: true, value: null, replayed: true }
+        : { ok: false, reason: 'key_reused' }
+    }
+    const current = this.#cards.find((c) => c.id === id)
+    if (!current) return { ok: false, reason: 'not_found' }
+    if (current.contentVersion !== contentVersion)
+      return { ok: false, reason: 'conflict' }
+    this.deleteCard(id)
+    this.#deletions.set(key, { fingerprint })
+    return { ok: true, value: null, replayed: false }
+  }
+
+  /**
+   * Updates the given fields with the same rules as creation, whatever
+   * the Card's version (as another device's edit would), and advances its
+   * `contentVersion`. The Card keeps its id, Progress and place in the
+   * default order; a Category left without Cards ceases to exist.
    */
   updateCard(id: string, fields: Partial<CardText>): WriteResult {
     const card = this.#cards.find((c) => c.id === id)
@@ -218,6 +295,7 @@ export class MockStore {
       card.categoryId = this.#categoryFor(trimmed.category).id
       this.#dropEmptyCategories()
     }
+    card.contentVersion++
     return { ok: true, card: this.#toCard(card) }
   }
 

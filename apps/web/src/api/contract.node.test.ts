@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { generateApiTypes, TYPES_URL } from '../../scripts/api-types.ts'
 import { CARD_QUOTA } from '../domain/card-text.js'
 import { IDEMPOTENCY_KEY_HEADER } from '../domain/idempotency.js'
+import { ifMatch, IF_MATCH_HEADER } from '../domain/versions.js'
 import { createHandlers } from '../mocks/handlers.js'
 import { mockToken } from '../mocks/identity.js'
 import { serverError } from '../mocks/scenarios.js'
@@ -68,8 +69,9 @@ describe('the mock backend', () => {
   afterAll(() => server.close())
 
   /**
-   * Sends a request as the demo account (a creation with a fresh
-   * idempotency key), and checks it against the contract: the body.
+   * Sends a request as the demo account (a write with a fresh idempotency
+   * key, and an edit or deletion based on the Card's current version), and
+   * checks it against the contract: the body.
    */
   async function expectConforms(
     method: Method,
@@ -78,8 +80,18 @@ describe('the mock backend', () => {
     status: number,
     requestBody?: unknown,
   ) {
+    const cardId = path.split('/')[3] ?? ''
     const key: Record<string, string> =
-      method === 'post' ? { [IDEMPOTENCY_KEY_HEADER]: newKey() } : {}
+      method === 'post'
+        ? { [IDEMPOTENCY_KEY_HEADER]: newKey() }
+        : method === 'patch' || method === 'delete'
+          ? {
+              [IDEMPOTENCY_KEY_HEADER]: newKey(),
+              [IF_MATCH_HEADER]: ifMatch(
+                mockStore.getCard(cardId)?.contentVersion ?? 1,
+              ),
+            }
+          : {}
     const { body } = await check(method, pathTemplate, path, status, {
       body: requestBody,
       headers: { ...bearer(MOCK_DEMO_USER), ...key },
@@ -297,6 +309,110 @@ describe('the mock backend', () => {
       500,
     )
     expect(error).toMatchObject({ code: 'server_error' })
+  })
+
+  describe('versioned edits and deletions', () => {
+    const write = (
+      method: 'patch' | 'delete',
+      cardId: string,
+      status: number,
+      {
+        version,
+        key = newKey(),
+        body,
+      }: { version: number; key?: string; body?: unknown },
+    ) =>
+      check(method, '/api/cards/{cardId}', `/api/cards/${cardId}`, status, {
+        body,
+        headers: {
+          ...bearer(MOCK_DEMO_USER),
+          [IDEMPOTENCY_KEY_HEADER]: key,
+          [IF_MATCH_HEADER]: ifMatch(version),
+        },
+      })
+
+    it('advances the content version with each edit', async () => {
+      const { body } = await write('patch', 'card-02', 200, {
+        version: 1,
+        body: { answer: 'Canberra.' },
+      })
+      expect(body).toMatchObject({ id: 'card-02', contentVersion: 2 })
+    })
+
+    it('refuses a stale edit or deletion with a conflict, changing nothing', async () => {
+      await write('patch', 'card-02', 200, {
+        version: 1,
+        body: { answer: 'B.' },
+      })
+      for (const method of ['patch', 'delete'] as const) {
+        const { body } = await write(method, 'card-02', 409, {
+          version: 1,
+          body: method === 'patch' ? { answer: 'C.' } : undefined,
+        })
+        expect(body).toMatchObject({ code: 'version_conflict' })
+      }
+      expect(mockStore.getCard('card-02')).toMatchObject({
+        answer: 'B.',
+        contentVersion: 2,
+      })
+    })
+
+    it('replays a repeated key, even after later writes, and refuses its reuse', async () => {
+      const key = newKey()
+      const first = await write('patch', 'card-02', 200, {
+        version: 1,
+        key,
+        body: { answer: 'B.' },
+      })
+      await write('patch', 'card-02', 200, {
+        version: 2,
+        body: { answer: 'C.' },
+      })
+      const again = await write('patch', 'card-02', 200, {
+        version: 1,
+        key,
+        body: { answer: 'B.' },
+      })
+      expect(again.body).toEqual(first.body)
+      expect(again.headers.get('Idempotent-Replayed')).toBe('true')
+      expect(mockStore.getCard('card-02')).toMatchObject({ answer: 'C.' })
+      const reused = await write('patch', 'card-02', 422, {
+        version: 1,
+        key,
+        body: { answer: 'D.' },
+      })
+      expect(reused.body).toMatchObject({ code: 'idempotency_key_reused' })
+
+      const deletion = newKey()
+      await write('delete', 'card-02', 204, { version: 3, key: deletion })
+      const replayed = await write('delete', 'card-02', 204, {
+        version: 3,
+        key: deletion,
+      })
+      expect(replayed.headers.get('Idempotent-Replayed')).toBe('true')
+    })
+
+    it.for(['patch', 'delete'] as const)(
+      'rejects %s without its write headers',
+      async (method) => {
+        const { body } = await check(
+          method,
+          '/api/cards/{cardId}',
+          '/api/cards/card-02',
+          400,
+          {
+            body: method === 'patch' ? { answer: 'B.' } : undefined,
+            headers: bearer(MOCK_DEMO_USER),
+          },
+        )
+        expect(body).toMatchObject({
+          fieldErrors: {
+            [IDEMPOTENCY_KEY_HEADER]: expect.any(String),
+            [IF_MATCH_HEADER]: expect.any(String),
+          },
+        })
+      },
+    )
   })
 
   describe('Progress', () => {

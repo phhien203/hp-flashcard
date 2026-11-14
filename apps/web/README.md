@@ -52,11 +52,26 @@ D1 has no interactive transactions; a **batch** runs its statements as one trans
 - **The 1,000-Card quota:** a trigger refuses the insert at 1,000, rolling the whole batch back. D1 runs one write at a time, so the count and the insert can't interleave.
 - **Idempotency:** the record's primary key is (owner, operation, key), so a key completes once.
 
+Editing and deleting are a batch each too, conditioned on the Card's `content_version`. The batch first records the idempotency key, but only while the Card is still at the version the request names; the edit (which advances the version) or the deletion runs under the same condition; then Categories left without Cards are deleted. Nothing recorded means nothing changed: a read then tells a missing Card (`404`) from a changed one (`409`). A deleted Card's place in the quota is free when its batch commits.
+
 The Worker tests exercise these with concurrent requests on a real local D1.
 
-### Retrying a creation
+### Versions and conflicts
 
-`POST /api/cards` requires an `Idempotency-Key`. The app sends one per intended creation and repeats it when the user retries after a failure, until the text changes or the Card is created. For 24 hours, the same key and body answer the original Card again (`Idempotent-Replayed: true`) without creating another or using quota; a different body answers `422`. Keys belong to their account. After 24 hours a record expires and its key creates anew; creations forget their owner's expired records, and a daily cron (`wrangler.jsonc`) deletes all expired ones.
+Every Card has a `contentVersion` (1 at creation, one more per edit). `PATCH` and `DELETE /api/cards/{id}` name the version they were based on in `If-Match: "<version>"`. If the Card has changed since, they answer `409 version_conflict` and change nothing. The app then shows the latest version: the edit dialog shows it beside the unsaved changes, to keep them (and save over it) or take the latest; the delete confirmation shows it and asks again. Progress, in the next slice, gets its own version, so studying won't conflict with an edit.
+
+### Retrying a write
+
+Creating, editing and deleting require an `Idempotency-Key`. The app sends one per intended write and repeats it when the user retries after a failure, until what is sent changes or the write succeeds. For 24 hours, the same key and request answer the original result again (`Idempotent-Replayed: true`) without applying it twice or using quota, even after later edits or the Card's deletion; a different request answers `422`. Keys belong to their account and operation. After 24 hours a record expires and its key writes anew; writes forget their owner's expired records, and a daily cron (`wrangler.jsonc`) deletes all expired ones.
+
+A replayed result describes the Card as it was then. The app never stores it in its cache; it refetches instead, so a replay can't show older content over newer.
+
+### Sessions, connectivity and caching
+
+- The app needs a connection. A write that gets no response fails at once and says so; nothing is queued or saved for later, and drafts live only in memory.
+- If the session ends without signing out (it expired) while an edit is unsaved, the edit is kept in memory. The same account signing in again gets the edit dialog back, with its idempotency key, to retry explicitly; any other account signing in makes it forgotten, as does signing out.
+- Data refetches on reload, on returning to the window, and after every write. There is no real-time sync.
+- Every API response carries `Cache-Control: private, no-store` and `Vary: Authorization`, so no shared cache serves one person's data to another.
 
 ### Card text
 
@@ -74,20 +89,22 @@ The Worker tests exercise these with concurrent requests on a real local D1.
 
 In mock mode, add `?scenario=` to the page URL to see the app's other states. Combine scenarios with commas, e.g. `?scenario=slow,page-error`. They aren't part of the API contract.
 
-| Scenario           | Effect                                     |
-| ------------------ | ------------------------------------------ |
-| `slow`             | Every Card listing takes 1.5 s             |
-| `empty`            | The backend starts with no Cards           |
-| `initial-error`    | The first request for the first page fails |
-| `page-error`       | The first request for a later page fails   |
-| `categories-error` | The first Category listing fails           |
-| `slow-writes`      | Every Card write takes 1.5 s               |
-| `create-error`     | The first Card creation fails              |
-| `edit-error`       | The first Card edit fails                  |
-| `edit-not-found`   | The first Card edit finds no such Card     |
-| `delete-error`     | The first Card deletion fails              |
-| `delete-not-found` | The first Card deletion finds it gone      |
-| `progress-error`   | The first Progress save fails              |
+| Scenario           | Effect                                          |
+| ------------------ | ----------------------------------------------- |
+| `slow`             | Every Card listing takes 1.5 s                  |
+| `empty`            | The backend starts with no Cards                |
+| `initial-error`    | The first request for the first page fails      |
+| `page-error`       | The first request for a later page fails        |
+| `categories-error` | The first Category listing fails                |
+| `slow-writes`      | Every Card write takes 1.5 s                    |
+| `create-error`     | The first Card creation fails                   |
+| `edit-error`       | The first Card edit fails                       |
+| `edit-not-found`   | The first Card edit finds no such Card          |
+| `delete-error`     | The first Card deletion fails                   |
+| `delete-not-found` | The first Card deletion finds it gone           |
+| `edit-conflict`    | Another device edits the Card first             |
+| `delete-conflict`  | Another device edits the Card before a deletion |
+| `progress-error`   | The first Progress save fails                   |
 
 ## Tests
 

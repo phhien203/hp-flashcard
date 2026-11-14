@@ -211,6 +211,32 @@ describe('axe on Card management', () => {
     await expectNoAxeViolationsInModal(outsideLandmarks)
   })
 
+  it('finds no violations when an edit or deletion conflicts', async () => {
+    worker.use(
+      ...SCENARIOS['edit-conflict'](mockStore),
+      ...SCENARIOS['delete-conflict'](mockStore),
+    )
+    await renderApp()
+    await expectShowing(12, 40)
+    await openEdit('What is the capital of Australia?')
+    await fillFields(editDialog(), { answer: 'Mine.' })
+    await editDialog().getByRole('button', { name: 'Update Card' }).click()
+    await expect
+      .element(editDialog().getByRole('button', { name: 'Keep my changes' }))
+      .toBeVisible()
+    await expectNoAxeViolationsAfterTyping(outsideLandmarks)
+    await editDialog()
+      .getByRole('button', { name: 'Use the latest version' })
+      .click()
+    await editDialog().getByRole('button', { name: 'Close' }).click()
+    await expect.element(editDialog()).not.toBeInTheDocument()
+
+    await openDelete('What is the capital of Australia?')
+    await deleteButton().click()
+    await expect.element(deleteDialog().getByRole('alert')).toBeVisible()
+    await expectNoAxeViolationsInModal(outsideLandmarks)
+  })
+
   it('finds no violations with a Show card notification', async () => {
     await renderApp()
     await toggleCategories('History')
