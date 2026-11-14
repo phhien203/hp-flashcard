@@ -8,6 +8,7 @@ import {
   type CardText,
   type CardTextErrors,
 } from '../domain/card-text.js'
+import { MASTERED } from '../domain/progress.js'
 import { seededShuffle } from '../domain/shuffle.js'
 
 /** A Card as the fixture describes it: its Category by name. */
@@ -34,9 +35,6 @@ export interface CardQuery {
   limit: number
   seed: number | undefined
 }
-
-/** The Progress of a Mastered Card, and the most a Card can have. */
-export const MASTERED = 5
 
 /** The fields of a Card a client writes, before validation. */
 export type CardFields = CardText

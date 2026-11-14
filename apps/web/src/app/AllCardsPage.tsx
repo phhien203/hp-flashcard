@@ -12,13 +12,13 @@ import type { Card, CategoryList } from '../api/types.js'
 import { useApi } from './api-context.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { CreateCardForm } from './CreateCardForm.js'
+import { MASTERED } from '../domain/progress.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
 import { Notice } from './Notice.js'
 import {
   fetchCard,
   isNotFound,
-  MASTERED,
   queryKeys,
   useCardPages,
   useCategories,

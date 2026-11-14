@@ -12,8 +12,8 @@ import type { Card } from '../api/types.js'
 import { useApi } from './api-context.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { Notice } from './Notice.js'
+import { MASTERED } from '../domain/progress.js'
 import {
-  MASTERED,
   PAGE_SIZE,
   studyPageOptions,
   useCardStatistics,

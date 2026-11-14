@@ -37,6 +37,9 @@ export const MAX_LENGTHS: Record<CardTextField, number> = {
 /** The most Cards one Collection may hold. */
 export const CARD_QUOTA = 1000
 
+/** The API's message when a Collection already holds `CARD_QUOTA` Cards. */
+export const QUOTA_EXCEEDED_MESSAGE = `A collection can hold at most ${CARD_QUOTA.toLocaleString('en-US')} cards.`
+
 /** Messages keyed by the field they are about. */
 export type CardTextErrors = Partial<Record<CardTextField, string>>
 

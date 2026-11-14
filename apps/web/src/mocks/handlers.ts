@@ -14,16 +14,16 @@ import {
   IDEMPOTENCY_KEY_PATTERN,
   IDEMPOTENT_REPLAYED_HEADER,
 } from '../domain/idempotency.js'
-import { CARD_QUOTA } from '../domain/card-text.js'
+import { QUOTA_EXCEEDED_MESSAGE } from '../domain/card-text.js'
 import {
   parseCardBody,
   parseCardListQuery,
   parseCategoryFilter,
   type Parsed,
 } from '../domain/requests.js'
+import { MASTERED } from '../domain/progress.js'
 import { mockOwnerOf } from './identity.js'
 import {
-  MASTERED,
   mockBackend,
   type CardFields,
   type MockStore,
@@ -44,7 +44,7 @@ export const unauthorized = () =>
 export const quotaExceeded = () =>
   error(409, {
     code: 'quota_exceeded',
-    message: `A collection can hold at most ${CARD_QUOTA.toLocaleString('en-US')} cards.`,
+    message: QUOTA_EXCEEDED_MESSAGE,
   })
 
 /**

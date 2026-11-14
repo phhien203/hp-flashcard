@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import fixture from './fixtures/cards.json' with { type: 'json' }
 import { scenariosFromUrl } from './scenarios.js'
 import { seededShuffle } from '../domain/shuffle.js'
-import { MASTERED, MockStore } from './store.js'
+import { MASTERED } from '../domain/progress.js'
+import { MockStore } from './store.js'
 
 const page = (
   store: MockStore,

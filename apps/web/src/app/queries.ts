@@ -14,9 +14,6 @@ import { useApi } from './api-context.js'
 /** How many Cards each request asks for: the first view and each Load More. */
 export const PAGE_SIZE = 12
 
-/** The Progress of a Mastered Card, and the most a Card can have. */
-export const MASTERED = 5
-
 /** What All Cards, or Study Mode, is asking the backend for. */
 export interface CardFilters {
   categoryIds: readonly string[]

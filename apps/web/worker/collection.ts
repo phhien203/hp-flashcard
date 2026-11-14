@@ -8,6 +8,7 @@ import {
   type CardText,
 } from '../src/domain/card-text.js'
 import { IDEMPOTENCY_TTL_MS } from '../src/domain/idempotency.js'
+import { MASTERED } from '../src/domain/progress.js'
 import type { CardListQuery } from '../src/domain/requests.js'
 import { seededShuffle } from '../src/domain/shuffle.js'
 import * as schema from './db/schema.js'
@@ -19,8 +20,6 @@ type Card = Schemas['Card']
 export type Database = DrizzleD1Database<typeof schema>
 
 export const database = (d1: D1Database): Database => drizzle(d1, { schema })
-
-const MASTERED = 5
 
 /**
  * The columns that make up a Card in API responses. The Category's are
