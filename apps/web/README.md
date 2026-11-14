@@ -60,7 +60,7 @@ The Worker tests exercise these with concurrent requests on a real local D1.
 
 ### Card text
 
-`src/domain/card-text.ts` holds the rules the forms, the mock and the Worker share: trimmed with `String.prototype.trim()`; nonblank; at most 2,000 (question), 10,000 (answer) and 100 (Category) characters, counted in Unicode code points after trimming (an emoji is one, a letter with a combining accent is two), as SQLite's `length()` counts in the database's own checks; no lone surrogates; stored without Unicode normalization. Category names match ignoring case (`toLowerCase()`) and surrounding whitespace.
+`src/domain/card-text.ts` holds the rules the forms, the mock and the Worker share: trimmed with `String.prototype.trim()`; nonblank; at most 2,000 (question), 10,000 (answer) and 100 (Category) characters, counted in Unicode code points after trimming (an emoji is one, a letter with a combining accent is two), as SQLite's `length()` counts in the database's own checks; no lone surrogates or NUL characters (SQLite's `length()` stops at a NUL); stored without Unicode normalization. Category names match ignoring case (`toLowerCase()`) and surrounding whitespace.
 
 ## API
 
