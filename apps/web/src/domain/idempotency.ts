@@ -30,6 +30,9 @@ export const OPERATIONS = {
   progress: 'setCardProgress',
 } as const
 
+/** An operation an idempotency key is bound to. */
+export type Operation = (typeof OPERATIONS)[keyof typeof OPERATIONS]
+
 /**
  * What identifies a creation request for its key: the fields exactly as
  * sent, so reusing a key for different text is detected.
