@@ -296,6 +296,25 @@ describe('an edit across signing in again', () => {
     })
   })
 
+  it('gives the edit back once: returning to All Cards later opens nothing', async () => {
+    const auth = createMockAuth()
+    await renderApp({ auth })
+    await editCanberra('Mine.')
+
+    auth.signOut()
+    await expect.element(signInHeading()).toBeVisible()
+    auth.signIn(MOCK_DEMO_USER)
+    await expect.element(editDialog()).toBeVisible()
+    await updateButton().click()
+    await expect.element(toast('Card updated successfully.')).toBeVisible()
+    await expect.element(editDialog()).not.toBeInTheDocument()
+
+    await page.getByRole('link', { name: 'Study Mode' }).click()
+    await page.getByRole('link', { name: 'All Cards' }).click()
+    await expectShowing(12, FIXTURE.length)
+    await expect.element(editDialog()).not.toBeInTheDocument()
+  })
+
   it('gives another account nothing, and forgets the edit', async () => {
     const auth = createMockAuth()
     await renderApp({ auth })
