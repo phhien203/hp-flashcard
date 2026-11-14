@@ -1,0 +1,271 @@
+{
+  "id": "b4281462-c2d2-4108-a413-31dc68cbb52f",
+  "prevId": "b4bc94e1-0307-4d86-8cc9-3d14966a68f8",
+  "version": "6",
+  "dialect": "sqlite",
+  "tables": {
+    "cards": {
+      "name": "cards",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "question": {
+          "name": "question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "answer": {
+          "name": "answer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "progress": {
+          "name": "progress",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "content_version": {
+          "name": "content_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "progress_version": {
+          "name": "progress_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cards_id_unique": {
+          "name": "cards_id_unique",
+          "columns": ["id"],
+          "isUnique": true
+        },
+        "cards_owner_seq_idx": {
+          "name": "cards_owner_seq_idx",
+          "columns": ["owner_id", "seq"],
+          "isUnique": false
+        },
+        "cards_owner_category_idx": {
+          "name": "cards_owner_category_idx",
+          "columns": ["owner_id", "category_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "cards_owner_category_fk": {
+          "name": "cards_owner_category_fk",
+          "tableFrom": "cards",
+          "columnsFrom": ["owner_id", "category_id"],
+          "tableTo": "categories",
+          "columnsTo": ["owner_id", "id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cards_progress_range": {
+          "name": "cards_progress_range",
+          "value": "\"cards\".\"progress\" between 0 and 5"
+        },
+        "cards_question_length": {
+          "name": "cards_question_length",
+          "value": "length(\"cards\".\"question\") between 1 and 2000"
+        },
+        "cards_answer_length": {
+          "name": "cards_answer_length",
+          "value": "length(\"cards\".\"answer\") between 1 and 10000"
+        }
+      }
+    },
+    "categories": {
+      "name": "categories",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "categories_owner_name_key_unique": {
+          "name": "categories_owner_name_key_unique",
+          "columns": ["owner_id", "name_key"],
+          "isUnique": true
+        },
+        "categories_owner_id_unique": {
+          "name": "categories_owner_id_unique",
+          "columns": ["owner_id", "id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "categories_name_length": {
+          "name": "categories_name_length",
+          "value": "length(\"categories\".\"name\") between 1 and 100"
+        }
+      }
+    },
+    "idempotency_records": {
+      "name": "idempotency_records",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "response": {
+          "name": "response",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idempotency_records_expires_at_idx": {
+          "name": "idempotency_records_expires_at_idx",
+          "columns": ["expires_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "idempotency_records_owner_id_operation_key_pk": {
+          "columns": ["owner_id", "operation", "key"],
+          "name": "idempotency_records_owner_id_operation_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

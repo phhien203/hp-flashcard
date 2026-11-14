@@ -2,6 +2,7 @@ import axe from 'axe-core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, server, userEvent } from 'vitest/browser'
 
+import { createMockAuth } from '../auth/mock-auth.js'
 import { worker } from '../mocks/browser.js'
 import { SCENARIOS } from '../mocks/scenarios.js'
 import { mockStore } from '../mocks/store.js'
@@ -67,6 +68,17 @@ const expectNoAxeViolationsInModal = expectNoAxeViolationsAfterTyping
 const expectNoAxeViolationsAfterCheckbox = expectNoAxeViolationsAfterTyping
 
 describe('axe', () => {
+  it('finds no violations on the sign-in', async () => {
+    await renderApp({ auth: createMockAuth(null) })
+    await expect
+      .element(
+        page.getByRole('heading', { name: 'Sign in to your flashcards' }),
+      )
+      .toBeVisible()
+
+    await expectNoAxeViolations()
+  })
+
   it('finds no violations on All Cards', async () => {
     await renderApp()
     await expectShowing(12, 40)

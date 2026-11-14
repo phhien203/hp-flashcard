@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { Card } from '../api/types.js'
+import { useApi } from './api-context.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { Notice } from './Notice.js'
 import {
@@ -62,6 +63,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
   const statistics = useCardStatistics(filters.categoryIds)
   const save = useSetProgress()
   const queryClient = useQueryClient()
+  const api = useApi()
 
   const total = cards.data?.total ?? 0
   const card: Card | undefined = cards.data?.items[index - pageOffset]
@@ -77,9 +79,9 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
     ]) {
       const offset = neighbour - (neighbour % PAGE_SIZE)
       if (offset !== pageOffset)
-        void queryClient.prefetchQuery(studyPageOptions(filters, offset))
+        void queryClient.prefetchQuery(studyPageOptions(api, filters, offset))
     }
-  }, [queryClient, filters, index, pageOffset, total])
+  }, [queryClient, api, filters, index, pageOffset, total])
 
   // Bumped by every change of view, so a save that finishes after one
   // doesn't move the new view.
@@ -112,7 +114,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
         // The listings have refetched: read how many Cards match now.
         const now =
           queryClient.getQueryData(
-            studyPageOptions(filters, pageOffset).queryKey,
+            studyPageOptions(api, filters, pageOffset).queryKey,
           )?.total ?? 0
         // A Card Hide Mastered now excludes has left the collection, so
         // the next Card has taken its position.

@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Card, CategoryList } from '../api/types.js'
+import { useApi } from './api-context.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
@@ -59,6 +60,7 @@ export function AllCardsPage({
   const filters = withExistingCategories(selectedFilters, categories.data)
   const cards = useCardPages(filters)
   const queryClient = useQueryClient()
+  const api = useApi()
   const toast = useToast()
   const listRef = useRef<HTMLUListElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -111,7 +113,7 @@ export function AllCardsPage({
   /** Clears the filters, then loads pages until the Card is on screen. */
   const showCard = async (cardId: string) => {
     try {
-      await fetchCard(queryClient, cardId)
+      await fetchCard(queryClient, api, cardId)
     } catch (error) {
       toast.add({
         title: isNotFound(error)

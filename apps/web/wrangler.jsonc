@@ -1,0 +1,32 @@
+// The Flashcard Worker: the API at /api/*, and the built frontend (dist/)
+// for every other path. See README.md for local setup and ADR 0001.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hp-flashcard",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    // Only the API reaches the Worker; assets are served without it.
+    "run_worker_first": ["/api/*"],
+  },
+  // No public workers.dev or preview URLs (ADR 0001). Production routing,
+  // the custom domain and deployment arrive with the deployment slice.
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hp-flashcard",
+      // Local development and tests use a local database under .wrangler/.
+      // The production database's id is filled in when it is provisioned
+      // (a human step: see README.md); this placeholder is no real database.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+  // Forget expired idempotency records daily.
+  "triggers": { "crons": ["17 3 * * *"] },
+  "observability": { "enabled": true },
+}

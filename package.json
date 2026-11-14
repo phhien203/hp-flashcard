@@ -12,6 +12,8 @@
     "build": "pnpm --filter @hp-flashcard/ui build",
     "build-storybook": "pnpm --filter @hp-flashcard/storybook build",
     "dev:web": "pnpm --filter @hp-flashcard/web dev",
+    "dev:web:mock": "pnpm --filter @hp-flashcard/web dev:mock",
+    "dev:api": "pnpm --filter @hp-flashcard/web dev:api",
     "build:web": "pnpm --filter @hp-flashcard/web build",
     "generate:api": "pnpm --filter @hp-flashcard/web generate:api",
     "check:api": "pnpm --filter @hp-flashcard/web check:api",

@@ -14,7 +14,7 @@ export default defineConfig({
       // The assembled app in a real browser: UI → TanStack Query → fetch →
       // MSW service worker → mock store.
       mergeConfig(
-        viteConfig,
+        viteConfig({ command: 'serve', mode: 'test' }),
         defineConfig({
           root: dirname,
           test: {
@@ -34,6 +34,18 @@ export default defineConfig({
           name: 'web:contract',
           include: ['src/**/*.node.test.ts'],
           environment: 'node',
+        },
+      },
+      // The Worker at its HTTP seam: bundled, in workerd (Miniflare), on a
+      // local D1 database built by the checked-in migrations.
+      {
+        root: dirname,
+        test: {
+          name: 'web:worker',
+          include: ['worker/**/*.test.ts'],
+          environment: 'node',
+          testTimeout: 30_000,
+          hookTimeout: 60_000,
         },
       },
     ],

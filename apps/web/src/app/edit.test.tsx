@@ -5,7 +5,7 @@ import { page, userEvent } from 'vitest/browser'
 import type { ApiErrorBody } from '../api/types.js'
 import { worker } from '../mocks/browser.js'
 import { SCENARIOS } from '../mocks/scenarios.js'
-import { seededShuffle } from '../mocks/shuffle.js'
+import { seededShuffle } from '../domain/shuffle.js'
 import { mockStore } from '../mocks/store.js'
 import {
   cardList,

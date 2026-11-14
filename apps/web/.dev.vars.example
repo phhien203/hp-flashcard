@@ -1,0 +1,10 @@
+# Copy to .dev.vars (git-ignored): the local Worker's secrets for `pnpm dev:api`.
+# All values come from your Clerk *development* instance; never production.
+
+# Clerk Dashboard → API keys → JWT public key → PEM (networkless verification).
+CLERK_JWT_KEY=
+# Or instead: the secret key (sk_test_…), which fetches the keys from Clerk.
+# CLERK_SECRET_KEY=
+
+# The origins allowed to have issued session tokens, comma-separated.
+CLERK_AUTHORIZED_PARTIES=http://localhost:5173

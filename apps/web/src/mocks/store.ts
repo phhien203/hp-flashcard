@@ -1,6 +1,14 @@
 import type { Card, CardPage, CardStatistics, Category } from '../api/types.js'
 import fixture from './fixtures/cards.json' with { type: 'json' }
-import { seededShuffle } from './shuffle.js'
+import {
+  BLANK_MESSAGES,
+  CARD_QUOTA,
+  categoryKey,
+  checkCardText,
+  type CardText,
+  type CardTextErrors,
+} from '../domain/card-text.js'
+import { seededShuffle } from '../domain/shuffle.js'
 
 /** A Card as the fixture describes it: its Category by name. */
 export interface SeedCard {
@@ -31,42 +39,24 @@ export interface CardQuery {
 export const MASTERED = 5
 
 /** The fields of a Card a client writes, before validation. */
-export interface CardFields {
-  question: string
-  answer: string
-  category: string
-}
+export type CardFields = CardText
 
 /** Why a write was rejected: messages keyed by field name. */
-export type FieldErrors = Partial<Record<keyof CardFields, string>>
+export type FieldErrors = CardTextErrors
 
 export type WriteResult =
   | { ok: true; card: Card }
   | { ok: false; reason: 'invalid'; fieldErrors: FieldErrors }
   | { ok: false; reason: 'not_found' }
 
+/** A creation's outcome: as a write, or refused by the quota or a key. */
+export type CreateResult =
+  | (WriteResult & { replayed?: boolean })
+  | { ok: false; reason: 'quota_exceeded' }
+  | { ok: false; reason: 'key_reused' }
+
 /** The message for a blank field, as the app also shows it. */
-export const BLANK_FIELD_MESSAGES: Record<keyof CardFields, string> = {
-  question: 'Please enter a question.',
-  answer: 'Please enter an answer.',
-  category: 'Please enter a category.',
-}
-
-/** Trims `fields` and reports the blank ones. */
-function validate(fields: Partial<CardFields>) {
-  const fieldErrors: FieldErrors = {}
-  const trimmed: Partial<CardFields> = {}
-  for (const name of ['question', 'answer', 'category'] as const) {
-    const value = fields[name]
-    if (value === undefined) continue
-    trimmed[name] = value.trim()
-    if (!trimmed[name]) fieldErrors[name] = BLANK_FIELD_MESSAGES[name]
-  }
-  return { trimmed, fieldErrors }
-}
-
-/** Category names are equivalent regardless of case and surrounding whitespace. */
-export const categoryKey = (name: string) => name.trim().toLocaleLowerCase()
+export const BLANK_FIELD_MESSAGES = BLANK_MESSAGES
 
 /**
  * The mock backend's in-memory data. It lives as long as the page: route
@@ -79,6 +69,8 @@ export class MockStore {
   #categories = new Map<string, { id: string; name: string }>()
   #nextCategoryId = 1
   #nextCardId = 1
+  /** Completed creations by idempotency key. */
+  #creations = new Map<string, { fingerprint: string; card: Card }>()
 
   constructor(seed: readonly SeedCard[] = fixture) {
     this.reset(seed)
@@ -90,6 +82,7 @@ export class MockStore {
     this.#categories.clear()
     this.#nextCategoryId = 1
     this.#nextCardId = 1
+    this.#creations.clear()
     for (const card of seed) {
       this.#cards.push({
         id: card.id,
@@ -184,18 +177,46 @@ export class MockStore {
    * case and surrounding whitespace, or created.
    */
   createCard(fields: CardFields): WriteResult {
-    const { trimmed, fieldErrors } = validate(fields)
-    if (Object.keys(fieldErrors).length > 0)
-      return { ok: false, reason: 'invalid', fieldErrors }
+    const checked = checkCardText(fields)
+    if (!checked.ok)
+      return { ok: false, reason: 'invalid', fieldErrors: checked.errors }
+    const trimmed = checked.value
     const card: StoredCard = {
       id: this.#newCardId(),
-      question: trimmed.question!,
-      answer: trimmed.answer!,
-      categoryId: this.#categoryFor(trimmed.category!).id,
+      question: trimmed.question,
+      answer: trimmed.answer,
+      categoryId: this.#categoryFor(trimmed.category).id,
       progress: 0,
     }
     this.#cards.unshift(card)
     return { ok: true, card: this.#toCard(card) }
+  }
+
+  /**
+   * Creates a Card as the API does: refused once the Collection holds
+   * `CARD_QUOTA` Cards, and at most once per idempotency `key`. Repeating a
+   * key with the same `fingerprint` answers the original Card again;
+   * reusing it for a different request is refused.
+   */
+  createCardOnce(
+    fields: CardFields,
+    key: string,
+    fingerprint: string,
+  ): CreateResult {
+    const earlier = this.#creations.get(key)
+    if (earlier) {
+      return earlier.fingerprint === fingerprint
+        ? { ok: true, card: earlier.card, replayed: true }
+        : { ok: false, reason: 'key_reused' }
+    }
+    const checked = checkCardText(fields)
+    if (!checked.ok)
+      return { ok: false, reason: 'invalid', fieldErrors: checked.errors }
+    if (this.#cards.length >= CARD_QUOTA)
+      return { ok: false, reason: 'quota_exceeded' }
+    const result = this.createCard(fields)
+    if (result.ok) this.#creations.set(key, { fingerprint, card: result.card })
+    return result
   }
 
   /**
@@ -206,9 +227,10 @@ export class MockStore {
   updateCard(id: string, fields: Partial<CardFields>): WriteResult {
     const card = this.#cards.find((c) => c.id === id)
     if (!card) return { ok: false, reason: 'not_found' }
-    const { trimmed, fieldErrors } = validate(fields)
-    if (Object.keys(fieldErrors).length > 0)
-      return { ok: false, reason: 'invalid', fieldErrors }
+    const checked = checkCardText(fields)
+    if (!checked.ok)
+      return { ok: false, reason: 'invalid', fieldErrors: checked.errors }
+    const trimmed = checked.value
     if (trimmed.question !== undefined) card.question = trimmed.question
     if (trimmed.answer !== undefined) card.answer = trimmed.answer
     if (trimmed.category !== undefined) {
@@ -269,5 +291,42 @@ export class MockStore {
   }
 }
 
-/** The one store the mock backend serves. */
-export const mockStore = new MockStore()
+/** The account whose Collection the mock backend seeds from the fixture. */
+export const MOCK_DEMO_USER = 'user_mock_demo'
+
+/**
+ * Every account's Collection. The demo account's starts from the fixture;
+ * any other account's starts empty, as a new account's does.
+ */
+export class MockBackend {
+  readonly #collections = new Map<string, MockStore>()
+  /** The demo account's Collection. */
+  readonly demo = new MockStore()
+
+  constructor() {
+    this.#collections.set(MOCK_DEMO_USER, this.demo)
+  }
+
+  /** The Collection that belongs to `userId`. */
+  collectionOf(userId: string) {
+    let collection = this.#collections.get(userId)
+    if (!collection) {
+      collection = new MockStore([])
+      this.#collections.set(userId, collection)
+    }
+    return collection
+  }
+
+  /** Restores the fixture for the demo account and forgets every other. */
+  reset() {
+    this.demo.reset()
+    this.#collections.clear()
+    this.#collections.set(MOCK_DEMO_USER, this.demo)
+  }
+}
+
+/** The accounts the mock backend serves. */
+export const mockBackend = new MockBackend()
+
+/** The demo account's Collection, which tests and scenarios act on. */
+export const mockStore = mockBackend.demo

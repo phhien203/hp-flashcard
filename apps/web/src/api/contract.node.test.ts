@@ -1,24 +1,23 @@
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 
 import { compileErrors, dereference, validate } from '@readme/openapi-parser'
-import { Ajv2020 } from 'ajv/dist/2020.js'
-import addFormats from 'ajv-formats'
 import { http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  generateApiTypes,
-  SPEC_URL,
-  TYPES_URL,
-} from '../../scripts/api-types.ts'
+import { generateApiTypes, TYPES_URL } from '../../scripts/api-types.ts'
+import { CARD_QUOTA } from '../domain/card-text.js'
+import { IDEMPOTENCY_KEY_HEADER } from '../domain/idempotency.js'
 import { createHandlers } from '../mocks/handlers.js'
+import { mockToken } from '../mocks/identity.js'
 import { serverError } from '../mocks/scenarios.js'
-import { mockStore } from '../mocks/store.js'
+import { MOCK_DEMO_USER, mockBackend, mockStore } from '../mocks/store.js'
+import { contractChecker, SPEC_PATH, type Method } from './contract-check.js'
 
-const SPEC_PATH = fileURLToPath(SPEC_URL)
 const ORIGIN = 'http://localhost'
+const bearer = (userId: string) => ({
+  Authorization: `Bearer ${mockToken(userId)}`,
+})
 
 describe('the OpenAPI document', () => {
   it('is a valid OpenAPI 3.1 document', async () => {
@@ -54,58 +53,37 @@ describe('the OpenAPI document', () => {
 
 describe('the mock backend', () => {
   const server = setupServer(...createHandlers(ORIGIN))
-  const ajv = new Ajv2020({ allErrors: true, strict: false })
-  addFormats.default(ajv)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let spec: any
+  let check: Awaited<ReturnType<typeof contractChecker>>
 
   beforeAll(async () => {
-    spec = await dereference(SPEC_PATH)
+    check = await contractChecker((path, init) =>
+      fetch(`${ORIGIN}${path}`, init),
+    )
     server.listen({ onUnhandledFrame: 'error' })
   })
   beforeEach(() => {
-    mockStore.reset()
+    mockBackend.reset()
     server.resetHandlers()
   })
   afterAll(() => server.close())
 
-  /** Fetches `path` and checks status and body against the contract. */
+  /**
+   * Sends a request as the demo account (a creation with a fresh
+   * idempotency key), and checks it against the contract: the body.
+   */
   async function expectConforms(
-    method: 'get' | 'post' | 'patch' | 'put' | 'delete',
+    method: Method,
     pathTemplate: string,
     path: string,
     status: number,
     requestBody?: unknown,
   ) {
-    const operation = spec.paths[pathTemplate][method]
-    if (requestBody !== undefined && status < 400) {
-      const checkRequest = ajv.compile(
-        operation.requestBody.content['application/json'].schema,
-      )
-      expect(
-        checkRequest(requestBody) ? [] : checkRequest.errors,
-        'the request body breaks the contract',
-      ).toEqual([])
-    }
-    const response = await fetch(`${ORIGIN}${path}`, {
-      method: method.toUpperCase(),
-      headers:
-        requestBody === undefined
-          ? undefined
-          : { 'Content-Type': 'application/json' },
-      body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
+    const key: Record<string, string> =
+      method === 'post' ? { [IDEMPOTENCY_KEY_HEADER]: newKey() } : {}
+    const { body } = await check(method, pathTemplate, path, status, {
+      body: requestBody,
+      headers: { ...bearer(MOCK_DEMO_USER), ...key },
     })
-    expect(response.status).toBe(status)
-    const definition = operation.responses[String(status)]
-    expect(definition, `${status} is not documented`).toBeDefined()
-    if (!definition.content) {
-      // No content: the response must have no body.
-      expect(await response.text()).toBe('')
-      return undefined
-    }
-    const body: unknown = await response.json()
-    const check = ajv.compile(definition.content['application/json'].schema)
-    expect(check(body) ? [] : check.errors).toEqual([])
     return body
   }
 
@@ -470,4 +448,139 @@ describe('the mock backend', () => {
       expect(error).toMatchObject({ code: 'server_error' })
     })
   })
+
+  describe('accounts', () => {
+    it.for([
+      ['get', '/api/cards', '/api/cards'],
+      ['post', '/api/cards', '/api/cards'],
+      ['get', '/api/cards/statistics', '/api/cards/statistics'],
+      ['get', '/api/cards/{cardId}', '/api/cards/card-01'],
+      ['patch', '/api/cards/{cardId}', '/api/cards/card-01'],
+      ['put', '/api/cards/{cardId}/progress', '/api/cards/card-01/progress'],
+      ['delete', '/api/cards/{cardId}', '/api/cards/card-01'],
+      ['get', '/api/categories', '/api/categories'],
+    ] as const)(
+      'answers %s %s with 401 without a session token',
+      async ([method, template, path]) => {
+        const attempts: Record<string, string>[] = [
+          {},
+          { Authorization: 'Bearer nonsense' },
+        ]
+        for (const headers of attempts) {
+          const { body } = await check(method, template, path, 401, {
+            headers,
+          })
+          expect(body).toMatchObject({ code: 'unauthorized' })
+        }
+        expect(mockStore.getCard('card-01')).toBeDefined()
+      },
+    )
+
+    it('gives a new account an empty Collection of its own', async () => {
+      const other = bearer('user_other')
+      const { body: page } = await check(
+        'get',
+        '/api/cards',
+        '/api/cards',
+        200,
+        { headers: other },
+      )
+      expect(page).toMatchObject({ items: [], total: 0 })
+      await check('get', '/api/cards/{cardId}', '/api/cards/card-01', 404, {
+        headers: other,
+      })
+    })
+  })
+
+  describe('creating', () => {
+    const create = (
+      status: number,
+      { key = newKey(), body = input as unknown, userId = MOCK_DEMO_USER } = {},
+    ) =>
+      check('post', '/api/cards', '/api/cards', status, {
+        body,
+        headers: { ...bearer(userId), [IDEMPOTENCY_KEY_HEADER]: key },
+      })
+
+    it('answers a repeated key with the original Card, once', async () => {
+      const key = newKey()
+      const first = await create(201, { key })
+      const again = await create(201, { key })
+      expect(again.body).toEqual(first.body)
+      expect(again.headers.get('Idempotent-Replayed')).toBe('true')
+      expect(mockStore.statistics([]).total).toBe(41)
+    })
+
+    it('creates another Card for the same text with a new key', async () => {
+      const first = await create(201)
+      const second = await create(201)
+      expect(second.body).not.toEqual(first.body)
+      expect(mockStore.statistics([]).total).toBe(42)
+    })
+
+    it('refuses a key reused for a different Card', async () => {
+      const key = newKey()
+      await create(201, { key })
+      const { body } = await create(422, {
+        key,
+        body: { ...input, answer: 'Something else.' },
+      })
+      expect(body).toMatchObject({ code: 'idempotency_key_reused' })
+    })
+
+    it('keeps keys apart between accounts', async () => {
+      const key = newKey()
+      await create(201, { key })
+      const other = await create(201, { key, userId: 'user_other' })
+      expect(other.headers.get('Idempotent-Replayed')).toBeNull()
+      expect(mockBackend.collectionOf('user_other').statistics([]).total).toBe(
+        1,
+      )
+    })
+
+    it.for(['', 'too-short', 'has spaces in it, not allowed'])(
+      'rejects the Idempotency-Key %j',
+      async (key) => {
+        const { body } = await create(400, { key })
+        expect(body).toMatchObject({
+          fieldErrors: { [IDEMPOTENCY_KEY_HEADER]: expect.any(String) },
+        })
+      },
+    )
+
+    it.for([
+      ['question', 2000],
+      ['answer', 10000],
+      ['category', 100],
+    ] as const)(
+      'accepts a %s of %i characters, and rejects one more',
+      async ([field, max]) => {
+        // An astral emoji is one character, though two UTF-16 units.
+        const at = { ...input, [field]: `  ${'😀'.repeat(max)}  ` }
+        await create(201, { body: at })
+        const over = { ...input, [field]: 'x'.repeat(max + 1) }
+        const { body } = await create(400, { body: over })
+        expect(body).toMatchObject({
+          fieldErrors: { [field]: expect.stringContaining('at most') },
+        })
+      },
+    )
+
+    it('refuses the Card after the 1,000th', async () => {
+      mockStore.reset(
+        Array.from({ length: CARD_QUOTA - 1 }, (_, i) => ({
+          id: `card-${i}`,
+          question: `Q${i}?`,
+          answer: 'A.',
+          category: 'Bulk',
+          progress: 0,
+        })),
+      )
+      await create(201)
+      const { body } = await create(409)
+      expect(body).toMatchObject({ code: 'quota_exceeded' })
+    })
+  })
 })
+
+const newKey = (): string => crypto.randomUUID()

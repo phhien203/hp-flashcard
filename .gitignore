@@ -11,3 +11,8 @@ __screenshots__/
 .env
 .env.*
 !.env.example
+# Wrangler's local state (local D1 databases) and Worker secrets.
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

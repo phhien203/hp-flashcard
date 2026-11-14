@@ -1,3 +1,4 @@
+import { IDEMPOTENCY_KEY_HEADER } from '../domain/idempotency.js'
 import type {
   ApiErrorBody,
   Card,
@@ -58,24 +59,44 @@ const withQuery = (
   return search ? `${path}?${search}` : path
 }
 
+export interface ApiClientOptions {
+  baseUrl?: string
+  /**
+   * The signed-in person's current session token, sent as a bearer token
+   * with every request. `null` sends none, and the API answers 401.
+   */
+  getToken: () => Promise<string | null>
+}
+
 /**
- * A typed client for the API in api/openapi.yaml, on native `fetch`. It
- * neither knows nor cares whether MSW or a real server answers.
+ * A typed client for the API in api/openapi.yaml, on native `fetch`, for
+ * one signed-in account. It neither knows nor cares whether MSW or a real
+ * server answers.
  */
-export function createApiClient(baseUrl = '') {
+export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
   async function request<T>(
     path: string,
     {
       method = 'GET',
       body,
       signal,
-    }: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+      headers,
+    }: {
+      method?: string
+      body?: unknown
+      signal?: AbortSignal
+      headers?: Record<string, string>
+    } = {},
   ): Promise<T> {
+    const token = await getToken()
+    signal?.throwIfAborted()
     const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
         Accept: 'application/json',
+        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
@@ -94,8 +115,16 @@ export function createApiClient(baseUrl = '') {
       request<CardPage>(withQuery('/api/cards', query), { signal }),
     getCard: (cardId: string, signal?: AbortSignal) =>
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, { signal }),
-    createCard: (input: CardInput) =>
-      request<Card>('/api/cards', { method: 'POST', body: input }),
+    /**
+     * Creates a Card. Retrying the same intended creation must repeat its
+     * `idempotencyKey`, so the backend creates it at most once.
+     */
+    createCard: (input: CardInput, idempotencyKey: string) =>
+      request<Card>('/api/cards', {
+        method: 'POST',
+        body: input,
+        headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      }),
     updateCard: (cardId: string, patch: CardPatch) =>
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'PATCH',
@@ -120,6 +149,3 @@ export function createApiClient(baseUrl = '') {
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>
-
-/** The client the app uses: the API on the app's own origin. */
-export const api = createApiClient()
