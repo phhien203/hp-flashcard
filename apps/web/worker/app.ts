@@ -1,7 +1,11 @@
 import { Hono, type Context } from 'hono'
 
 import type { components } from '../src/api/schema.js'
-import { checkCardText, type CardText } from '../src/domain/card-text.js'
+import {
+  checkCardText,
+  QUOTA_EXCEEDED_MESSAGE,
+  type CardText,
+} from '../src/domain/card-text.js'
 import {
   creationFingerprint,
   IDEMPOTENCY_KEY_HEADER,
@@ -98,12 +102,7 @@ export function createApp({ now = Date.now }: { now?: () => number } = {}) {
     )
     switch (creation.kind) {
       case 'quota_exceeded':
-        return apiError(
-          c,
-          409,
-          'quota_exceeded',
-          'A collection can hold at most 1,000 cards.',
-        )
+        return apiError(c, 409, 'quota_exceeded', QUOTA_EXCEEDED_MESSAGE)
       case 'key_reused':
         return apiError(
           c,
