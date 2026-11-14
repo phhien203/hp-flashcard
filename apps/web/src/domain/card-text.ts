@@ -10,7 +10,8 @@
  *   code points) count 1, 1 and 2. It matches SQLite's `length()` on text,
  *   which the database's own checks use, and JSON Schema's `maxLength`.
  * - Text must be **well-formed** UTF-16: a lone surrogate is rejected, as it
- *   could not be stored faithfully.
+ *   could not be stored faithfully. So is the NUL character (U+0000), at
+ *   which SQLite's `length()` stops counting.
  * - Text is stored as given (after trimming): no Unicode normalization.
  * - **Category names** are equivalent when their trimmed, lower-cased
  *   (`String.prototype.toLowerCase()`, locale-independent) forms are equal.
@@ -62,16 +63,16 @@ export const INVALID_TEXT_MESSAGE =
 /** How many characters `text` holds: its Unicode code points. */
 export const characterCount = (text: string) => Array.from(text).length
 
-/** Whether `text` has no lone surrogates. */
-const isWellFormed = (text: string) =>
-  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+/** Whether `text` has no lone surrogates and no NUL. */
+const isStorable = (text: string) =>
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|\0/.test(
     text,
   )
 
 /** Why one trimmed field value is unacceptable, or `undefined`. */
 export function fieldError(field: CardTextField, trimmed: string) {
   if (!trimmed) return BLANK_MESSAGES[field]
-  if (!isWellFormed(trimmed)) return INVALID_TEXT_MESSAGE
+  if (!isStorable(trimmed)) return INVALID_TEXT_MESSAGE
   if (characterCount(trimmed) > MAX_LENGTHS[field]) return tooLongMessage(field)
   return undefined
 }

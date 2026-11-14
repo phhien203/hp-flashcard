@@ -26,7 +26,7 @@ info:
     Schema's `maxLength` counts): 2,000 for a question, 10,000 for an
     answer and 100 for a Category name. Trimming removes ECMAScript white
     space and line terminators at either end. Text containing a lone UTF-16
-    surrogate is rejected. Text is stored as sent, without Unicode
+    surrogate or a NUL character (U+0000) is rejected. Text is stored as sent, without Unicode
     normalization.
 
     Operations this backend does not support yet answer `501` with

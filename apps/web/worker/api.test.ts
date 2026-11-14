@@ -322,6 +322,9 @@ describe('validation', () => {
     [{ ...card(1), answer: 'x'.repeat(10001) }, 'answer'],
     [{ ...card(1), category: 'x'.repeat(101) }, 'category'],
     [{ ...card(1), question: 'Broken \uD800 text' }, 'question'],
+    // SQLite's length() stops at a NUL, so the database couldn't check it.
+    [{ ...card(1), question: '\u0000 hidden' }, 'question'],
+    [{ ...card(1), category: 'Bio\u0000logy' }, 'category'],
   ] as const)(
     'rejects a bad %# field, creating nothing',
     async ([body, field]) => {
