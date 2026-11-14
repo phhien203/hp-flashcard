@@ -1,7 +1,8 @@
-import { ClerkProvider, SignIn, useAuth } from '@clerk/react'
+import { ClerkProvider, SignIn, useAuth, useClerk } from '@clerk/react'
 import type { ComponentProps, ReactNode } from 'react'
 import { useMemo } from 'react'
 
+import { tokenForAccount } from './clerk-token.js'
 import type { AuthSession } from './session.js'
 
 /**
@@ -65,17 +66,18 @@ function ClerkSession({
 }: {
   children: (session: AuthSession, signIn: ReactNode) => ReactNode
 }) {
-  const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth()
+  const { isLoaded, isSignedIn, userId, signOut } = useAuth()
+  const clerk = useClerk()
   const session = useMemo((): AuthSession => {
     if (!isLoaded) return { status: 'loading' }
     if (!isSignedIn || !userId) return { status: 'signed-out' }
     return {
       status: 'signed-in',
       userId,
-      getToken: () => getToken(),
+      getToken: () => tokenForAccount(clerk, userId),
       signOut: () => signOut(),
     }
-  }, [isLoaded, isSignedIn, userId, getToken, signOut])
+  }, [isLoaded, isSignedIn, userId, clerk, signOut])
 
   // Sign-in and sign-up in one flow: registration is open, and a new
   // account starts with an empty Collection. The email one-time code is
