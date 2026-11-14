@@ -137,12 +137,16 @@ function Collection({
   )
 
   // Mounted once per account, so an edit kept for another is forgotten here.
-  const [restored] = useState(() => keeper.resume(userId))
+  const [restored, setRestored] = useState(() => keeper.resume(userId))
   const keptEdit = useMemo(
     () => ({
       restored,
-      keep: (edit: Parameters<EditKeeper['keep']>[1]) =>
-        keeper.keep(userId, edit),
+      keep: (edit: Parameters<EditKeeper['keep']>[1]) => {
+        keeper.keep(userId, edit)
+        // The dialog that reopened it holds it now: given back only once,
+        // so a later visit to All Cards doesn't reopen it.
+        setRestored(undefined)
+      },
     }),
     [restored, keeper, userId],
   )
