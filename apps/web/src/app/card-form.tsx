@@ -10,6 +10,11 @@ import { useState } from 'react'
 
 import { ApiError } from '../api/client.js'
 import type { Card, CardInput } from '../api/types.js'
+import {
+  BLANK_MESSAGES,
+  CARD_QUOTA,
+  checkCardText,
+} from '../domain/card-text.js'
 
 /** What the user has typed into a Card form, untrimmed. */
 export interface CardDraft {
@@ -24,12 +29,6 @@ export type CardField = keyof CardDraft
 export type DraftErrors = Partial<Record<CardField, string>>
 
 export const EMPTY_DRAFT: CardDraft = { question: '', answer: '', category: '' }
-
-const BLANK_MESSAGES: Record<CardField, string> = {
-  question: 'Please enter a question.',
-  answer: 'Please enter an answer.',
-  category: 'Please enter a category.',
-}
 
 /** The draft of an existing Card, as its edit form starts. */
 export const draftOf = (card: Card): CardDraft => ({
@@ -48,24 +47,16 @@ export const sameDraft = (a: CardDraft, b: CardDraft) =>
   a.category === b.category
 
 /**
- * Trims the draft and rejects blank fields, as the API does: the
- * trimmed Card to send, or the errors to show.
+ * Trims the draft and rejects blank and over-long fields, as the API does:
+ * the trimmed Card to send, or the errors to show.
  */
 export function checkDraft(
   draft: CardDraft,
 ): { ok: true; input: CardInput } | { ok: false; errors: DraftErrors } {
-  const input = {
-    question: draft.question.trim(),
-    answer: draft.answer.trim(),
-    category: draft.category.trim(),
-  }
-  const errors: DraftErrors = {}
-  for (const field of ['question', 'answer', 'category'] as const) {
-    if (!input[field]) errors[field] = BLANK_MESSAGES[field]
-  }
-  return Object.keys(errors).length > 0
-    ? { ok: false, errors }
-    : { ok: true, input }
+  const checked = checkCardText(draft)
+  return checked.ok
+    ? { ok: true, input: checked.value }
+    : { ok: false, errors: checked.errors }
 }
 
 /** How a failed save is explained: beside fields, or for the whole form. */
@@ -89,6 +80,24 @@ export function saveErrorOf(error: unknown): {
       return {
         fieldErrors: {},
         message: 'This card no longer exists, so it could not be saved.',
+      }
+    }
+    if (error.status === 401) {
+      return {
+        fieldErrors: {},
+        message: 'Your session has ended. Sign in again to save your card.',
+      }
+    }
+    if (error.body?.code === 'quota_exceeded') {
+      return {
+        fieldErrors: {},
+        message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
+      }
+    }
+    if (error.status === 501) {
+      return {
+        fieldErrors: {},
+        message: 'Saving this change isn’t available yet.',
       }
     }
   }

@@ -12,10 +12,29 @@ info:
     exactly one **Category**; **Progress** runs from 0 to 5, and a Card at
     5/5 is **Mastered**. Categories exist only through Cards.
 
+    Every operation acts on the signed-in person's private **Collection**:
+    send a Clerk session token as `Authorization: Bearer <token>`. The owner
+    is always the verified token's subject; no request field can name
+    another. A missing, expired, malformed or otherwise invalid token gets
+    `401` before any data is read or written.
+
     Errors use one shape, `Error`. Validation failures (`400`) also carry
-    `fieldErrors`, keyed by the request body field or query parameter name.
+    `fieldErrors`, keyed by the request body field, query parameter or
+    header name.
+
+    Text limits are counted in Unicode code points after trimming (as JSON
+    Schema's `maxLength` counts): 2,000 for a question, 10,000 for an
+    answer and 100 for a Category name. Trimming removes ECMAScript white
+    space and line terminators at either end. Text containing a lone UTF-16
+    surrogate is rejected. Text is stored as sent, without Unicode
+    normalization.
+
+    Operations this backend does not support yet answer `501` with
+    `not_implemented`; they never report a write that did not happen.
 servers:
   - url: /
+security:
+  - clerkSession: []
 tags:
   - name: Cards
   - name: Categories
@@ -84,6 +103,8 @@ paths:
                 $ref: '#/components/schemas/CardPage'
         '400':
           $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -96,6 +117,30 @@ paths:
         allowed. The Category is matched to an existing one ignoring letter
         case and surrounding whitespace (keeping that Category's spelling),
         or created. A `400` names each rejected field in `fieldErrors`.
+
+        A Collection holds at most 1,000 Cards; creating one more answers
+        `409` with `quota_exceeded`, even when requests race for the last
+        place.
+
+        Send a fresh `Idempotency-Key` for each Card you mean to create, and
+        the same key when retrying it (say, after a lost response). For 24
+        hours the backend remembers the creation under your account, this
+        operation and the key: repeating it with the same body answers the
+        original `201` again, with `Idempotent-Replayed: true`, without
+        creating another Card or using quota. Reusing the key with a
+        different body answers `422`. After 24 hours the key is forgotten,
+        and a request with it creates a new Card.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            Identifies this intended creation across retries: 16 to 128
+            letters, digits, `-` or `_`, such as a UUID. Keys are scoped to
+            your account.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{16,128}$'
       requestBody:
         required: true
         content:
@@ -104,18 +149,31 @@ paths:
               $ref: '#/components/schemas/CardInput'
       responses:
         '201':
-          description: The created Card.
+          description: The created Card, or the one this key created before.
           headers:
             Location:
               description: The Card's URL.
               schema:
                 type: string
+            Idempotent-Replayed:
+              description: |
+                `true` when this repeats the result of an earlier request
+                with the same key.
+              schema:
+                type: string
+                enum: ['true']
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Card'
         '400':
           $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/QuotaExceeded'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -150,6 +208,8 @@ paths:
                 $ref: '#/components/schemas/CardStatistics'
         '400':
           $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -171,6 +231,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Card'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -199,10 +261,14 @@ paths:
                 $ref: '#/components/schemas/Card'
         '400':
           $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
     delete:
       tags: [Cards]
       operationId: deleteCard
@@ -211,10 +277,14 @@ paths:
       responses:
         '204':
           description: The Card was deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
 
   /api/cards/{cardId}/progress:
     parameters:
@@ -248,10 +318,14 @@ paths:
                 $ref: '#/components/schemas/Card'
         '400':
           $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
 
   /api/categories:
     get:
@@ -268,6 +342,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CategoryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -350,13 +426,15 @@ components:
       properties:
         question:
           type: string
-          description: Trimmed; must not be blank.
+          description: Trimmed; must not be blank; at most 2,000 characters.
         answer:
           type: string
-          description: Trimmed; must not be blank.
+          description: Trimmed; must not be blank; at most 10,000 characters.
         category:
           type: string
-          description: A Category name. Trimmed; must not be blank.
+          description: |
+            A Category name. Trimmed; must not be blank; at most 100
+            characters.
     CardPatch:
       type: object
       additionalProperties: false
@@ -365,13 +443,15 @@ components:
       properties:
         question:
           type: string
-          description: Trimmed; must not be blank.
+          description: Trimmed; must not be blank; at most 2,000 characters.
         answer:
           type: string
-          description: Trimmed; must not be blank.
+          description: Trimmed; must not be blank; at most 10,000 characters.
         category:
           type: string
-          description: A Category name. Trimmed; must not be blank.
+          description: |
+            A Category name. Trimmed; must not be blank; at most 100
+            characters.
     ProgressInput:
       type: object
       additionalProperties: false
@@ -430,7 +510,14 @@ components:
       properties:
         code:
           type: string
-          enum: [validation_failed, not_found, server_error]
+          enum:
+            - validation_failed
+            - unauthorized
+            - not_found
+            - quota_exceeded
+            - idempotency_key_reused
+            - server_error
+            - not_implemented
         message:
           type: string
         fieldErrors:
@@ -438,6 +525,13 @@ components:
           description: Messages keyed by body field or query parameter name.
           additionalProperties:
             type: string
+
+  securitySchemes:
+    clerkSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A Clerk session token for the signed-in person.
 
   responses:
     ValidationFailed:
@@ -448,6 +542,32 @@ components:
             $ref: '#/components/schemas/Error'
     NotFound:
       description: No Card has this identifier.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: |
+        The request has no session token, or one that is expired, malformed
+        or otherwise invalid. Sign in again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    QuotaExceeded:
+      description: The Collection already holds 1,000 Cards.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    IdempotencyKeyReused:
+      description: The `Idempotency-Key` was used for a different request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotImplemented:
+      description: This backend does not support the operation yet.
       content:
         application/json:
           schema:

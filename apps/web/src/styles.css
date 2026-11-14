@@ -6,5 +6,9 @@
  * theme.css brings the Figma tokens, the Poppins font and the components'
  * classes; Tailwind scans this app's own files automatically.
  */
+/* Clerk's sign-in styles sit below Tailwind's utilities, so the classes in
+ * src/auth/clerk.tsx can adjust them. */
+@layer theme, base, clerk, components, utilities;
+
 @import 'tailwindcss';
 @import '../../../packages/ui/src/styles/theme.css';

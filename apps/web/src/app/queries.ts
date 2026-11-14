@@ -7,8 +7,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import { api, ApiError } from '../api/client.js'
+import { ApiError, type ApiClient } from '../api/client.js'
 import type { Card, CardInput, CardPatch } from '../api/types.js'
+import { useApi } from './api-context.js'
 
 /** How many Cards each request asks for: the first view and each Load More. */
 export const PAGE_SIZE = 12
@@ -55,6 +56,7 @@ const listQuery = ({ categoryIds, hideMastered, seed }: CardFilters) => ({
 
 /** The matching Cards, a page of 12 at a time, paged by the backend. */
 export function useCardPages({ categoryIds, hideMastered, seed }: CardFilters) {
+  const api = useApi()
   return useInfiniteQuery({
     queryKey: [...queryKeys.cardLists, { categoryIds, hideMastered, seed }],
     queryFn: ({ pageParam, signal }) =>
@@ -81,6 +83,7 @@ export function useCardPages({ categoryIds, hideMastered, seed }: CardFilters) {
  * time. Every write refetches it, so it always reflects the collection.
  */
 export const studyPageOptions = (
+  api: ApiClient,
   { categoryIds, hideMastered, seed }: CardFilters,
   offset: number,
 ) =>
@@ -103,13 +106,14 @@ export const studyPageOptions = (
 
 /** The Study Mode page of matching Cards that starts at `offset`. */
 export const useStudyPage = (filters: CardFilters, offset: number) =>
-  useQuery(studyPageOptions(filters, offset))
+  useQuery(studyPageOptions(useApi(), filters, offset))
 
 /**
  * How many Cards in the Categories (every Category when none) are Not
  * Started, In Progress and Mastered, across the whole collection.
  */
 export function useCardStatistics(categoryIds: readonly string[]) {
+  const api = useApi()
   return useQuery({
     queryKey: [...queryKeys.statistics, { categoryIds }],
     queryFn: ({ signal }) =>
@@ -119,6 +123,7 @@ export function useCardStatistics(categoryIds: readonly string[]) {
 
 /** Every Category with its global Card count. */
 export function useCategories() {
+  const api = useApi()
   return useQuery({
     queryKey: queryKeys.categories,
     queryFn: ({ signal }) => api.listCategories(signal),
@@ -126,7 +131,11 @@ export function useCategories() {
 }
 
 /** Fetches one Card, fresh from the backend. */
-export const fetchCard = (queryClient: QueryClient, cardId: string) =>
+export const fetchCard = (
+  queryClient: QueryClient,
+  api: ApiClient,
+  cardId: string,
+) =>
   queryClient.fetchQuery({
     queryKey: queryKeys.card(cardId),
     queryFn: ({ signal }) => api.getCard(cardId, signal),
@@ -162,11 +171,21 @@ async function refetchCollection(queryClient: QueryClient) {
   ])
 }
 
-/** Creates a Card. Nothing changes on screen until the backend agrees. */
+/**
+ * Creates a Card. Nothing changes on screen until the backend agrees. A
+ * retry of the same intended creation repeats its `idempotencyKey`.
+ */
 export function useCreateCard() {
   const queryClient = useQueryClient()
+  const api = useApi()
   return useMutation({
-    mutationFn: (input: CardInput) => api.createCard(input),
+    mutationFn: ({
+      input,
+      idempotencyKey,
+    }: {
+      input: CardInput
+      idempotencyKey: string
+    }) => api.createCard(input, idempotencyKey),
     onSuccess: (card) => afterWrite(queryClient, card),
   })
 }
@@ -174,6 +193,7 @@ export function useCreateCard() {
 /** Edits a Card. Nothing changes on screen until the backend agrees. */
 export function useUpdateCard() {
   const queryClient = useQueryClient()
+  const api = useApi()
   return useMutation({
     mutationFn: ({ cardId, patch }: { cardId: string; patch: CardPatch }) =>
       api.updateCard(cardId, patch),
@@ -189,6 +209,7 @@ export function useUpdateCard() {
  */
 export function useSetProgress() {
   const queryClient = useQueryClient()
+  const api = useApi()
   return useMutation({
     mutationFn: ({ cardId, progress }: { cardId: string; progress: number }) =>
       api.setCardProgress(cardId, progress),
@@ -208,6 +229,7 @@ export const isNotFound = (error: unknown) =>
  */
 export function useDeleteCard() {
   const queryClient = useQueryClient()
+  const api = useApi()
   const forget = async (cardId: string) => {
     queryClient.removeQueries({ queryKey: queryKeys.card(cardId) })
     await refetchCollection(queryClient)

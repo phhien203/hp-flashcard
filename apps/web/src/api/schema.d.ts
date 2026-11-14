@@ -32,6 +32,19 @@ export interface paths {
          *     allowed. The Category is matched to an existing one ignoring letter
          *     case and surrounding whitespace (keeping that Category's spelling),
          *     or created. A `400` names each rejected field in `fieldErrors`.
+         *
+         *     A Collection holds at most 1,000 Cards; creating one more answers
+         *     `409` with `quota_exceeded`, even when requests race for the last
+         *     place.
+         *
+         *     Send a fresh `Idempotency-Key` for each Card you mean to create, and
+         *     the same key when retrying it (say, after a lost response). For 24
+         *     hours the backend remembers the creation under your account, this
+         *     operation and the key: repeating it with the same body answers the
+         *     original `201` again, with `Idempotent-Replayed: true`, without
+         *     creating another Card or using quota. Reusing the key with a
+         *     different body answers `422`. After 24 hours the key is forgotten,
+         *     and a request with it creates a new Card.
          */
         post: operations["createCard"];
         delete?: never;
@@ -172,20 +185,26 @@ export interface components {
             nextOffset: number | null;
         };
         CardInput: {
-            /** @description Trimmed; must not be blank. */
+            /** @description Trimmed; must not be blank; at most 2,000 characters. */
             question: string;
-            /** @description Trimmed; must not be blank. */
+            /** @description Trimmed; must not be blank; at most 10,000 characters. */
             answer: string;
-            /** @description A Category name. Trimmed; must not be blank. */
+            /**
+             * @description A Category name. Trimmed; must not be blank; at most 100
+             *     characters.
+             */
             category: string;
         };
         /** @description The fields to change; at least one. */
         CardPatch: {
-            /** @description Trimmed; must not be blank. */
+            /** @description Trimmed; must not be blank; at most 2,000 characters. */
             question?: string;
-            /** @description Trimmed; must not be blank. */
+            /** @description Trimmed; must not be blank; at most 10,000 characters. */
             answer?: string;
-            /** @description A Category name. Trimmed; must not be blank. */
+            /**
+             * @description A Category name. Trimmed; must not be blank; at most 100
+             *     characters.
+             */
             category?: string;
         };
         ProgressInput: {
@@ -212,7 +231,7 @@ export interface components {
         };
         Error: {
             /** @enum {string} */
-            code: "validation_failed" | "not_found" | "server_error";
+            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "server_error" | "not_implemented";
             message: string;
             /** @description Messages keyed by body field or query parameter name. */
             fieldErrors?: {
@@ -232,6 +251,45 @@ export interface components {
         };
         /** @description No Card has this identifier. */
         NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description The request has no session token, or one that is expired, malformed
+         *     or otherwise invalid. Sign in again.
+         */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The Collection already holds 1,000 Cards. */
+        QuotaExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The `Idempotency-Key` was used for a different request. */
+        IdempotencyKeyReused: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description This backend does not support the operation yet. */
+        NotImplemented: {
             headers: {
                 [name: string]: unknown;
             };
@@ -290,13 +348,21 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
         };
     };
     createCard: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Identifies this intended creation across retries: 16 to 128
+                 *     letters, digits, `-` or `_`, such as a UUID. Keys are scoped to
+                 *     your account.
+                 */
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -306,11 +372,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The created Card. */
+            /** @description The created Card, or the one this key created before. */
             201: {
                 headers: {
                     /** @description The Card's URL. */
                     Location?: string;
+                    /**
+                     * @description `true` when this repeats the result of an earlier request
+                     *     with the same key.
+                     */
+                    "Idempotent-Replayed"?: "true";
                     [name: string]: unknown;
                 };
                 content: {
@@ -318,6 +389,9 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["QuotaExceeded"];
+            422: components["responses"]["IdempotencyKeyReused"];
             500: components["responses"]["ServerError"];
         };
     };
@@ -347,6 +421,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
         };
     };
@@ -370,6 +445,7 @@ export interface operations {
                     "application/json": components["schemas"]["Card"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["ServerError"];
         };
@@ -392,8 +468,10 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["ServerError"];
+            501: components["responses"]["NotImplemented"];
         };
     };
     updateCard: {
@@ -421,8 +499,10 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["ServerError"];
+            501: components["responses"]["NotImplemented"];
         };
     };
     setCardProgress: {
@@ -450,8 +530,10 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["ServerError"];
+            501: components["responses"]["NotImplemented"];
         };
     };
     listCategories: {
@@ -472,6 +554,7 @@ export interface operations {
                     "application/json": components["schemas"]["CategoryList"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
         };
     };

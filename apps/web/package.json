@@ -4,19 +4,28 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "dev:api": "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && wrangler d1 migrations apply DB --local && wrangler dev",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json && tsc -p tsconfig.worker-test.json",
     "generate:api": "node scripts/generate-api-types.ts",
-    "check:api": "node scripts/check-api-types.ts"
+    "check:api": "node scripts/check-api-types.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
+    "@clerk/backend": "catalog:",
+    "@clerk/react": "catalog:",
     "@hp-flashcard/ui": "workspace:*",
     "@tanstack/react-query": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
     "@readme/openapi-parser": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
@@ -26,12 +35,14 @@
     "ajv": "catalog:",
     "ajv-formats": "catalog:",
     "axe-core": "catalog:",
+    "drizzle-kit": "catalog:",
     "msw": "catalog:",
     "openapi-typescript": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
-    "vitest-browser-react": "catalog:"
+    "vitest-browser-react": "catalog:",
+    "wrangler": "catalog:"
   }
 }

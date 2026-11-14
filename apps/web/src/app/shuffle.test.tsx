@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 
-import { seededShuffle } from '../mocks/shuffle.js'
+import { seededShuffle } from '../domain/shuffle.js'
 import {
   expectShowing,
   FIXTURE,

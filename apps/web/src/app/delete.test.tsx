@@ -3,7 +3,7 @@ import { page, userEvent } from 'vitest/browser'
 
 import { worker } from '../mocks/browser.js'
 import { SCENARIOS } from '../mocks/scenarios.js'
-import { seededShuffle } from '../mocks/shuffle.js'
+import { seededShuffle } from '../domain/shuffle.js'
 import { mockStore, type SeedCard } from '../mocks/store.js'
 import {
   cardList,
