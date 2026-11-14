@@ -115,8 +115,6 @@ export interface VersionedWrite {
   now: number
 }
 
-const CREATE_CARD = OPERATIONS.create
-
 /**
  * One owner's Collection. Every query is scoped to `ownerId`, which comes
  * from the verified session, so no request can reach another Collection.
@@ -155,7 +153,7 @@ export function collection(db: Database, ownerId: string) {
     requestHash: string,
     now: number,
   ): Promise<Creation | undefined> => {
-    const record = await findRecord(CREATE_CARD, key, now)
+    const record = await findRecord(OPERATIONS.create, key, now)
     if (!record) return undefined
     return record.requestHash === requestHash
       ? { kind: 'replayed', card: JSON.parse(record.response) as Card }
@@ -427,7 +425,7 @@ export function collection(db: Database, ownerId: string) {
             db
               .select({
                 ownerId: cards.ownerId,
-                operation: sql<string>`${CREATE_CARD}`.as('operation'),
+                operation: sql<string>`${OPERATIONS.create}`.as('operation'),
                 key: sql<string>`${key}`.as('key'),
                 requestHash: sql<string>`${requestHash}`.as('requestHash'),
                 response: sql<string>`${cardJson}`.as('response'),
@@ -446,7 +444,7 @@ export function collection(db: Database, ownerId: string) {
             .where(
               and(
                 eq(idempotencyRecords.ownerId, ownerId),
-                eq(idempotencyRecords.operation, CREATE_CARD),
+                eq(idempotencyRecords.operation, OPERATIONS.create),
                 eq(idempotencyRecords.key, key),
               ),
             ),

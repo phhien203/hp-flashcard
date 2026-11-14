@@ -94,13 +94,6 @@ export function saveErrorOf(error: unknown): {
         message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
       }
     }
-    if (error.body?.code === 'version_conflict') {
-      return {
-        fieldErrors: {},
-        message:
-          'This card was changed on another device, so your changes weren’t saved.',
-      }
-    }
     if (error.status === 501) {
       return {
         fieldErrors: {},
