@@ -15,6 +15,7 @@ import { isNetworkFailure } from './card-form.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
 import { Notice } from './Notice.js'
+import { progressFingerprint } from '../domain/idempotency.js'
 import { MASTERED } from '../domain/progress.js'
 import { rateLimitedMessage } from '../domain/rate-limit.js'
 import {
@@ -168,7 +169,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
     setLastSave(variables)
     const { cardId, progress, progressVersion } = variables
     const idempotencyKey = keys.keyFor(
-      JSON.stringify([cardId, progressVersion, progress]),
+      progressFingerprint(cardId, progressVersion, progress),
     )
     save.mutate(
       { cardId, progress, write: { progressVersion, idempotencyKey } },
