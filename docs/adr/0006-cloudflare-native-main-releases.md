@@ -1,0 +1,5 @@
+# Deploy main through Cloudflare's native Git integration
+
+The operator explicitly prefers automatic web releases without giving Cloudflare credentials to GitHub Actions. Cloudflare Workers Builds therefore listens to `main` with the `apps/web/*` watch path and runs the repository's build/deploy commands entirely inside Cloudflare; previews stay disabled. This supersedes the tagged-release/GitHub bridge decisions in ADR 0004 and the corresponding original #63 criteria; GitHub CI remains checks-only and UI-package publishing is unchanged.
+
+Production authorization and runtime secrets stay in Cloudflare. Build success precedes reviewed backward-compatible D1 migrations, deployment and Custom Domain health checks; rollback remains code-only. Native triggers do not by themselves prove cross-build serialization or stale-retry safety: the removed GitHub lock/watermark guarantees are not claimed, and strict equivalents would require a Cloudflare-side coordinator and provider verification. App-only watch paths also omit shared UI/root dependency changes unless an operator triggers a build or expands the paths.

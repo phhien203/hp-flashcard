@@ -1,5 +1,7 @@
 # Release tagged commits with forward-compatible migrations
 
+**Status:** Release triggering and orchestration superseded by [ADR 0006](0006-cloudflare-native-main-releases.md). Forward-compatible migrations, code-only rollback and Custom Domain health checks still apply.
+
 With only local and production environments, releases must be deliberate and database changes must not break the currently running Worker. Tags matching `web-v*` trigger GitHub Actions checks followed by a Cloudflare Build for the exact tagged commit, keeping application releases distinct from UI-package release tags.
 
 ## Release constraints

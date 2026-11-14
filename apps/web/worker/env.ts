@@ -1,5 +1,6 @@
 /** The Worker's bindings: wrangler.jsonc, plus secrets and variables. */
 export interface Env {
+  WORKER_VERSION?: { id: string; tag: string; timestamp: string }
   DB: D1Database
   /**
    * The Clerk instance's PEM public key, for networkless session token
