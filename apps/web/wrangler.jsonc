@@ -26,7 +26,20 @@
       "migrations_dir": "migrations",
     },
   ],
-  // Forget expired idempotency records daily.
+  // Daily: forget expired idempotency records, old webhook deliveries and
+  // rate-limit entries out of their window.
   "triggers": { "crons": ["17 3 * * *"] },
-  "observability": { "enabled": true },
+  // Workers Logs and Issues (error monitoring), every request. The Worker
+  // logs its own sanitized records (worker/log.ts): request id, route
+  // pattern, status, latency, error class. Cloudflare's automatic
+  // invocation logs and traces are off: they would record request URLs,
+  // which name Cards, and details this app keeps out of its logs.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+    "issues": { "enabled": true },
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false },
+  },
 }

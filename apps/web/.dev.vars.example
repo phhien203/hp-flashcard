@@ -8,3 +8,8 @@ CLERK_JWT_KEY=
 
 # The origins allowed to have issued session tokens, comma-separated.
 CLERK_AUTHORIZED_PARTIES=http://localhost:5173
+
+# Clerk Dashboard → Webhooks → your endpoint → Signing secret (whsec_…), for
+# the user.deleted webhook at /api/webhooks/clerk. Without it, deliveries are
+# refused (500) and Clerk retries them.
+# CLERK_WEBHOOK_SIGNING_SECRET=

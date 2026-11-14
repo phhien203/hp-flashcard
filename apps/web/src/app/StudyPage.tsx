@@ -8,12 +8,19 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
+import { ApiError } from '../api/client.js'
 import type { Card } from '../api/types.js'
 import { useApi } from './api-context.js'
+import { isNetworkFailure } from './card-form.js'
 import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
+import { useIdempotencyKeys } from './idempotency-keys.js'
 import { Notice } from './Notice.js'
 import { MASTERED } from '../domain/progress.js'
+import { rateLimitedMessage } from '../domain/rate-limit.js'
 import {
+  isConflict,
+  isNotFound,
+  isRateLimited,
   PAGE_SIZE,
   studyPageOptions,
   useCardStatistics,
@@ -36,8 +43,59 @@ const INITIAL_FILTERS: CardFilters = {
 interface ProgressSave {
   cardId: string
   progress: number
+  /** The Card's `progressVersion` the save is based on. */
+  progressVersion: number
   /** `score` moves on to the next Card; `reset` stays on this one. */
   kind: 'score' | 'reset'
+}
+
+/**
+ * How a failed Progress save is explained, and whether sending it again
+ * can help. After a conflict or a deleted Card, the screen already shows
+ * the Card as it is now: the person decides again rather than retrying.
+ */
+function saveFailure(error: unknown): {
+  title: string
+  description: string
+  retry: boolean
+} {
+  if (isConflict(error))
+    return {
+      title: 'This card’s progress was changed on another device.',
+      description:
+        'It now shows the latest progress. Study it again if you like.',
+      retry: false,
+    }
+  if (isNotFound(error))
+    return {
+      title: 'This card no longer exists.',
+      description: 'It was deleted on another device.',
+      retry: false,
+    }
+  if (isRateLimited(error))
+    return {
+      title: 'Your progress could not be saved.',
+      description: rateLimitedMessage(error.retryAfter),
+      retry: true,
+    }
+  if (error instanceof ApiError && error.status === 401)
+    return {
+      title: 'Your progress could not be saved.',
+      description: 'Your session has ended. Sign in again to save it.',
+      retry: false,
+    }
+  if (isNetworkFailure(error))
+    return {
+      title: 'Your progress could not be saved.',
+      description:
+        'You’re offline or the server can’t be reached. Check your connection and try again.',
+      retry: true,
+    }
+  return {
+    title: 'Your progress could not be saved.',
+    description: 'The card keeps its previous progress.',
+    retry: true,
+  }
 }
 
 export interface StudyPageProps {
@@ -62,6 +120,8 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
   const cards = useStudyPage(filters, pageOffset)
   const statistics = useCardStatistics(filters.categoryIds)
   const save = useSetProgress()
+  // One key per intended save, repeated by Retry: credited at most once.
+  const keys = useIdempotencyKeys()
   const queryClient = useQueryClient()
   const api = useApi()
 
@@ -106,24 +166,33 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
   const saveProgress = (variables: ProgressSave) => {
     const started = view.current
     setLastSave(variables)
-    save.mutate(variables, {
-      onSuccess: (saved) => {
-        if (view.current !== started) return
-        setFlipped(false)
-        if (variables.kind === 'reset') return
-        // The listings have refetched: read how many Cards match now.
-        const now =
-          queryClient.getQueryData(
-            studyPageOptions(api, filters, pageOffset).queryKey,
-          )?.total ?? 0
-        // A Card Hide Mastered now excludes has left the collection, so
-        // the next Card has taken its position.
-        const excluded = filters.hideMastered && saved.progress >= MASTERED
-        const next = excluded ? index : index + 1
-        setIndex(now > 0 ? next % now : 0)
+    const { cardId, progress, progressVersion } = variables
+    const idempotencyKey = keys.keyFor(
+      JSON.stringify([cardId, progressVersion, progress]),
+    )
+    save.mutate(
+      { cardId, progress, write: { progressVersion, idempotencyKey } },
+      {
+        onSuccess: ({ value: saved }) => {
+          keys.done()
+          if (view.current !== started) return
+          setFlipped(false)
+          if (variables.kind === 'reset') return
+          // The listings have refetched: read how many Cards match now.
+          const now =
+            queryClient.getQueryData(
+              studyPageOptions(api, filters, pageOffset).queryKey,
+            )?.total ?? 0
+          // A Card Hide Mastered now excludes has left the collection, so
+          // the next Card has taken its position.
+          const excluded = filters.hideMastered && saved.progress >= MASTERED
+          const next = excluded ? index : index + 1
+          setIndex(now > 0 ? next % now : 0)
+        },
       },
-    })
+    )
   }
+  const failure = save.isError ? saveFailure(save.error) : undefined
 
   const empty = cards.isSuccess && total === 0
   // Under Hide Mastered, an empty listing means no Cards only when there are
@@ -254,6 +323,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
                     saveProgress({
                       cardId: card.id,
                       progress: Math.min(card.progress + 1, MASTERED),
+                      progressVersion: card.progressVersion,
                       kind: 'score',
                     })
                   }
@@ -267,6 +337,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
                     saveProgress({
                       cardId: card.id,
                       progress: 0,
+                      progressVersion: card.progressVersion,
                       kind: 'reset',
                     })
                   }
@@ -274,18 +345,20 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
                   Reset Progress
                 </Button>
               </div>
-              {save.isError && lastSave && (
+              {failure && lastSave && (
                 <Notice
                   role="alert"
-                  title="Your progress could not be saved."
-                  description="The card keeps its previous progress."
+                  title={failure.title}
+                  description={failure.description}
                 >
-                  <Button
-                    variant="outline"
-                    onClick={() => saveProgress(lastSave)}
-                  >
-                    Retry
-                  </Button>
+                  {failure.retry && (
+                    <Button
+                      variant="outline"
+                      onClick={() => saveProgress(lastSave)}
+                    >
+                      Retry
+                    </Button>
+                  )}
                 </Notice>
               )}
             </div>

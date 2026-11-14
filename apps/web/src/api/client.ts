@@ -2,6 +2,7 @@ import {
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENT_REPLAYED_HEADER,
 } from '../domain/idempotency.js'
+import { RETRY_AFTER_HEADER } from '../domain/rate-limit.js'
 import { ifMatch, IF_MATCH_HEADER } from '../domain/versions.js'
 import type {
   ApiErrorBody,
@@ -20,14 +21,25 @@ import type {
 export class ApiError extends Error {
   readonly status: number
   readonly body: ApiErrorBody | undefined
+  /** For a `429`: whole seconds to wait before writing again, if given. */
+  readonly retryAfter: number | undefined
 
-  constructor(status: number, body: ApiErrorBody | undefined) {
+  constructor(
+    status: number,
+    body: ApiErrorBody | undefined,
+    retryAfter?: number,
+  ) {
     super(body?.message ?? `The API responded with ${status}.`)
     this.name = 'ApiError'
     this.status = status
     this.body = body
+    this.retryAfter = retryAfter
   }
 }
+
+/** A `Retry-After` header's whole seconds, if it holds some. */
+const secondsOf = (value: string | null) =>
+  value !== null && /^\d+$/.test(value) ? Number(value) : undefined
 
 const isErrorBody = (value: unknown): value is ApiErrorBody =>
   typeof value === 'object' &&
@@ -90,12 +102,17 @@ export interface VersionedWrite {
   idempotencyKey: string
 }
 
-const versionedHeaders = ({
-  contentVersion,
-  idempotencyKey,
-}: VersionedWrite) => ({
+/** What a Progress save names. */
+export interface ProgressWrite {
+  /** The `progressVersion` the save was based on. */
+  progressVersion: number
+  /** The same for every retry of this intended save. */
+  idempotencyKey: string
+}
+
+const versionedHeaders = (version: number, idempotencyKey: string) => ({
   [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
-  [IF_MATCH_HEADER]: ifMatch(contentVersion),
+  [IF_MATCH_HEADER]: ifMatch(version),
 })
 
 /**
@@ -133,7 +150,11 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
     })
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => undefined)
-      throw new ApiError(response.status, isErrorBody(body) ? body : undefined)
+      throw new ApiError(
+        response.status,
+        isErrorBody(body) ? body : undefined,
+        secondsOf(response.headers.get(RETRY_AFTER_HEADER)),
+      )
     }
     const replayed = response.headers.get(IDEMPOTENT_REPLAYED_HEADER) === 'true'
     // 204 No Content has no body.
@@ -167,12 +188,22 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
       send<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'PATCH',
         body: patch,
-        headers: versionedHeaders(write),
+        headers: versionedHeaders(write.contentVersion, write.idempotencyKey),
       }),
-    setCardProgress: (cardId: string, progress: ProgressInput['progress']) =>
-      request<Card>(`/api/cards/${encodeURIComponent(cardId)}/progress`, {
+    /**
+     * Sets a Card's Progress if it is still at `progressVersion` (else
+     * `409`). Retrying the same intended save must repeat its
+     * `idempotencyKey`.
+     */
+    setCardProgress: (
+      cardId: string,
+      progress: ProgressInput['progress'],
+      write: ProgressWrite,
+    ) =>
+      send<Card>(`/api/cards/${encodeURIComponent(cardId)}/progress`, {
         method: 'PUT',
         body: { progress } satisfies ProgressInput,
+        headers: versionedHeaders(write.progressVersion, write.idempotencyKey),
       }),
     getCardStatistics: (query: CardStatisticsQuery, signal?: AbortSignal) =>
       request<CardStatistics>(withQuery('/api/cards/statistics', query), {
@@ -185,7 +216,7 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
     deleteCard: (cardId: string, write: VersionedWrite) =>
       send<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'DELETE',
-        headers: versionedHeaders(write),
+        headers: versionedHeaders(write.contentVersion, write.idempotencyKey),
       }),
     listCategories: (signal?: AbortSignal) =>
       request<CategoryList>('/api/categories', { signal }),

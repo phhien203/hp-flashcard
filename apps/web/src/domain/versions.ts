@@ -1,13 +1,19 @@
 /**
- * Optimistic concurrency for Card content (ADR 0003). Every Card carries a
- * `contentVersion`; an edit or deletion names the version it was based on
- * in `If-Match`, as a quoted entity tag (`"3"`), and is refused with `409`
- * when the Card has moved on.
+ * Optimistic concurrency for Cards (ADR 0003), with two independent
+ * versions. A Card's `contentVersion` covers its question, answer and
+ * Category: an edit or deletion names it. Its `progressVersion` covers its
+ * Progress: a Progress save names it. Each write names its version in
+ * `If-Match`, as a quoted entity tag (`"3"`), and is refused with `409`
+ * when that version has moved on; a write to one never moves the other.
  */
 export const IF_MATCH_HEADER = 'If-Match'
 
-export const IF_MATCH_MESSAGE =
-  'Send the Card’s contentVersion as a quoted number, e.g. "3".'
+/** The two versions a Card carries. */
+export type VersionName = 'contentVersion' | 'progressVersion'
+
+/** How to send `version` in `If-Match`. */
+export const ifMatchMessage = (version: VersionName) =>
+  `Send the Card’s ${version} as a quoted number, e.g. "3".`
 
 /** The `If-Match` value naming `contentVersion`. */
 export const ifMatch = (contentVersion: number) => `"${contentVersion}"`

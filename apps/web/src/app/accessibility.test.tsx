@@ -148,6 +148,26 @@ describe('axe', () => {
     await expectNoAxeViolations()
   })
 
+  it.for([
+    [
+      'progress-conflict',
+      'This card’s progress was changed on another device.',
+    ],
+    ['rate-limited', 'You’re making changes too quickly.'],
+  ] as const)(
+    'finds no violations in Study Mode when a save meets %s',
+    async ([scenario, message]) => {
+      worker.use(...SCENARIOS[scenario](mockStore))
+      await renderApp()
+      await page.getByRole('link', { name: 'Study Mode' }).click()
+      await page.getByRole('button', { name: 'Reset Progress' }).click()
+      await expect
+        .element(page.getByRole('alert').filter({ hasText: message }))
+        .toBeVisible()
+      await expectNoAxeViolations()
+    },
+  )
+
   it('finds no violations in the empty and error states', async () => {
     SCENARIOS.empty(mockStore)
     const empty = await renderApp()

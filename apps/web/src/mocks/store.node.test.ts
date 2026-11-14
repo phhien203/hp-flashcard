@@ -269,7 +269,11 @@ describe('MockStore writes', () => {
   it('sets Progress, keeping the Card and its place', () => {
     const store = new MockStore()
     const before = store.getCard('card-02')!
-    expect(store.setProgress('card-02', 5)).toEqual({ ...before, progress: 5 })
+    expect(store.setProgress('card-02', 5)).toEqual({
+      ...before,
+      progress: 5,
+      progressVersion: 2,
+    })
     expect(page(store, { limit: 3 }).items.map((card) => card.id)).toEqual([
       'card-01',
       'card-02',
@@ -277,6 +281,52 @@ describe('MockStore writes', () => {
     ])
     expect(page(store, { hideMastered: true }).total).toBe(31)
     expect(store.setProgress('nope', 1)).toBeUndefined()
+  })
+})
+
+describe('MockStore Progress saves', () => {
+  const request = (progressVersion: number, key = 'key-0123456789abcdef') => ({
+    progressVersion,
+    key,
+    fingerprint: `${progressVersion}`,
+  })
+
+  it('saves only at the current Progress version, leaving the content version', () => {
+    const store = new MockStore()
+    const saved = store.setProgressOnce('card-02', 5, request(1))
+    expect(saved).toMatchObject({
+      ok: true,
+      replayed: false,
+      value: { progress: 5, contentVersion: 1, progressVersion: 2 },
+    })
+    expect(
+      store.setProgressOnce('card-02', 0, request(1, 'other-key-0123456')),
+    ).toEqual({
+      ok: false,
+      reason: 'conflict',
+    })
+    // A content edit doesn't make a Progress save stale.
+    store.updateCard('card-02', { answer: 'Edited.' })
+    expect(
+      store.setProgressOnce('card-02', 0, request(2, 'third-key-0123456')),
+    ).toMatchObject({ ok: true, value: { progress: 0, contentVersion: 2 } })
+  })
+
+  it('replays a key, refuses its reuse, and never recreates a deleted Card', () => {
+    const store = new MockStore()
+    const first = store.setProgressOnce('card-02', 5, request(1))
+    store.deleteCard('card-02')
+    expect(store.setProgressOnce('card-02', 5, request(1))).toEqual({
+      ...first,
+      replayed: true,
+    })
+    expect(
+      store.setProgressOnce('card-02', 5, { ...request(1), fingerprint: 'x' }),
+    ).toEqual({ ok: false, reason: 'key_reused' })
+    expect(
+      store.setProgressOnce('card-02', 1, request(2, 'other-key-0123456')),
+    ).toEqual({ ok: false, reason: 'not_found' })
+    expect(store.getCard('card-02')).toBeUndefined()
   })
 })
 

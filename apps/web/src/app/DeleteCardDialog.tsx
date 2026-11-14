@@ -16,7 +16,14 @@ import { ApiError } from '../api/client.js'
 import { useApi } from './api-context.js'
 import { FormError, isNetworkFailure } from './card-form.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
-import { fetchCard, isConflict, isNotFound, useDeleteCard } from './queries.js'
+import { rateLimitedMessage } from '../domain/rate-limit.js'
+import {
+  fetchCard,
+  isConflict,
+  isNotFound,
+  isRateLimited,
+  useDeleteCard,
+} from './queries.js'
 
 export interface DeleteCardDialogProps {
   /** The Card to delete. */
@@ -150,7 +157,9 @@ export function DeleteCardDialog({
                           : failure instanceof ApiError &&
                               failure.status === 401
                             ? 'Your session has ended. Sign in again to delete your card.'
-                            : 'Your card could not be deleted. Please try again.',
+                            : isRateLimited(failure)
+                              ? rateLimitedMessage(failure.retryAfter)
+                              : 'Your card could not be deleted. Please try again.',
                       )
                   },
                 },

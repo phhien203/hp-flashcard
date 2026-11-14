@@ -48,6 +48,7 @@ const cardColumns = {
   answer: cards.answer,
   progress: cards.progress,
   contentVersion: cards.contentVersion,
+  progressVersion: cards.progressVersion,
   categoryId: sql<string>`${categories.id}`.as('category_id'),
   categoryName: sql<string>`${categories.name}`.as('category_name'),
 }
@@ -58,6 +59,7 @@ const toCard = (row: {
   answer: string
   progress: number
   contentVersion: number
+  progressVersion: number
   categoryId: string
   categoryName: string
 }): Card => ({
@@ -67,6 +69,7 @@ const toCard = (row: {
   category: { id: row.categoryId, name: row.categoryName },
   progress: row.progress,
   contentVersion: row.contentVersion,
+  progressVersion: row.progressVersion,
 })
 
 /**
@@ -79,7 +82,8 @@ const cardJson = sql<string>`json_object(
   'answer', ${cards.answer},
   'category', json_object('id', ${categories.id}, 'name', ${categories.name}),
   'progress', ${cards.progress},
-  'contentVersion', ${cards.contentVersion}
+  'contentVersion', ${cards.contentVersion},
+  'progressVersion', ${cards.progressVersion}
 )`
 
 /** What creating a Card came to. */
@@ -105,6 +109,9 @@ export type Deletion =
   | { kind: 'not_found' }
   | { kind: 'conflict' }
 
+/** What saving a Card's Progress came to. */
+export type ProgressSave = Edit
+
 /** The version-checked writes to an existing Card. */
 export interface VersionedWrite {
   cardId: string
@@ -113,6 +120,12 @@ export interface VersionedWrite {
   key: string
   requestHash: string
   now: number
+}
+
+/** A Progress save: version-checked against the `progressVersion`. */
+export interface ProgressWrite extends Omit<VersionedWrite, 'contentVersion'> {
+  /** The `progressVersion` the request was based on. */
+  progressVersion: number
 }
 
 /**
@@ -160,13 +173,12 @@ export function collection(db: Database, ownerId: string) {
       : { kind: 'key_reused' }
   }
 
-  /** An earlier edit with this key: repeated, or refused. */
-  const earlierEdit = async ({
-    key,
-    requestHash,
-    now,
-  }: VersionedWrite): Promise<Edit | undefined> => {
-    const record = await findRecord(OPERATIONS.update, key, now)
+  /** An earlier edit or Progress save with this key: repeated, or refused. */
+  const earlierEdit = async (
+    { key, requestHash, now }: Omit<VersionedWrite, 'contentVersion'>,
+    operation: string = OPERATIONS.update,
+  ): Promise<Edit | undefined> => {
+    const record = await findRecord(operation, key, now)
     if (!record) return undefined
     return record.requestHash === requestHash
       ? { kind: 'replayed', card: JSON.parse(record.response) as Card }
@@ -203,6 +215,14 @@ export function collection(db: Database, ownerId: string) {
       eq(cards.contentVersion, contentVersion),
     )
 
+  /** The owner's Card `cardId`, if its Progress is still at `progressVersion`. */
+  const cardAtProgressVersion = (cardId: string, progressVersion: number) =>
+    and(
+      ownCards,
+      eq(cards.id, cardId),
+      eq(cards.progressVersion, progressVersion),
+    )
+
   /** Forgets the owner's expired records, so their keys write anew. */
   const forgetExpired = (now: number) =>
     db
@@ -222,22 +242,27 @@ export function collection(db: Database, ownerId: string) {
    */
   const recordIfCurrent = (
     operation: string,
-    { cardId, contentVersion, key, requestHash, now }: VersionedWrite,
+    { key, requestHash, now }: Omit<VersionedWrite, 'contentVersion'>,
+    current: SQL | undefined,
   ) =>
-    db.insert(idempotencyRecords).select(
-      db
-        .select({
-          ownerId: cards.ownerId,
-          operation: sql<string>`${operation}`.as('operation'),
-          key: sql<string>`${key}`.as('key'),
-          requestHash: sql<string>`${requestHash}`.as('requestHash'),
-          response: sql<string>`''`.as('response'),
-          createdAt: sql<number>`${now}`.as('createdAt'),
-          expiresAt: sql<number>`${now + IDEMPOTENCY_TTL_MS}`.as('expiresAt'),
-        })
-        .from(cards)
-        .where(cardAtVersion(cardId, contentVersion)),
-    )
+    db
+      .insert(idempotencyRecords)
+      .select(
+        db
+          .select({
+            ownerId: cards.ownerId,
+            operation: sql<string>`${operation}`.as('operation'),
+            key: sql<string>`${key}`.as('key'),
+            requestHash: sql<string>`${requestHash}`.as('requestHash'),
+            response: sql<string>`''`.as('response'),
+            createdAt: sql<number>`${now}`.as('createdAt'),
+            expiresAt: sql<number>`${now + IDEMPOTENCY_TTL_MS}`.as('expiresAt'),
+          })
+          .from(cards)
+          .where(current),
+      )
+      // Whether this request's batch made the record, or found another's.
+      .returning({ key: idempotencyRecords.key })
 
   const thisRecord = (operation: string, key: string) =>
     and(
@@ -489,9 +514,13 @@ export function collection(db: Database, ownerId: string) {
       const nameKey =
         fields.category === undefined ? undefined : categoryKey(fields.category)
       try {
-        const [, , , , , , recorded] = await db.batch([
+        const [, inserted, , , , , recorded] = await db.batch([
           forgetExpired(now),
-          recordIfCurrent(operation, write),
+          recordIfCurrent(
+            operation,
+            write,
+            cardAtVersion(cardId, contentVersion),
+          ),
           // Matching an equivalent Category, or creating it. If the Card
           // turns out to have moved on, the cleanup below removes it again.
           nameKey === undefined
@@ -553,9 +582,78 @@ export function collection(db: Database, ownerId: string) {
         if (!record) return { kind: await refusal(cardId) }
         // A request with the same key committed first.
         if (record.requestHash !== requestHash) return { kind: 'key_reused' }
-        return { kind: 'updated', card: JSON.parse(record.response) as Card }
+        const card = JSON.parse(record.response) as Card
+        // A retry that raced the original: it applied nothing itself.
+        if (inserted.length === 0) return { kind: 'replayed', card }
+        return { kind: 'updated', card }
       } catch (error) {
         const raced = await earlierEdit(write)
+        if (raced) return raced
+        throw error
+      }
+    },
+
+    /**
+     * Sets a Card's Progress to `progress` (absolute: one more for "I Know
+     * This", 0 to reset), if its Progress is still at the request's
+     * `progressVersion`, at most once per idempotency key.
+     *
+     * One D1 batch, like an edit, but conditioned on and advancing the
+     * `progressVersion` only: a content edit doesn't make a Progress save
+     * stale, nor a Progress save an edit or deletion. An UPDATE, never an
+     * insert: a save for a deleted Card changes nothing and answers 404.
+     */
+    async setProgress(
+      progress: number,
+      write: ProgressWrite,
+    ): Promise<ProgressSave> {
+      const operation = OPERATIONS.progress
+      const earlier = await earlierEdit(write, operation)
+      if (earlier) return earlier
+
+      const { cardId, progressVersion, key, requestHash, now } = write
+      const current = cardAtProgressVersion(cardId, progressVersion)
+      try {
+        const [, inserted, , , recorded] = await db.batch([
+          forgetExpired(now),
+          recordIfCurrent(operation, write, current),
+          db
+            .update(cards)
+            .set({
+              progress,
+              progressVersion: sql`${cards.progressVersion} + 1`,
+            })
+            .where(current),
+          db
+            .update(idempotencyRecords)
+            .set({
+              response: sql`(select ${cardJson} from ${cards} inner join ${categories} on ${cardInCategory} where ${and(
+                ownCards,
+                eq(cards.id, cardId),
+              )})`,
+            })
+            .where(
+              and(
+                thisRecord(operation, key),
+                eq(idempotencyRecords.response, ''),
+              ),
+            ),
+          db
+            .select({
+              requestHash: idempotencyRecords.requestHash,
+              response: idempotencyRecords.response,
+            })
+            .from(idempotencyRecords)
+            .where(thisRecord(operation, key)),
+        ])
+        const [record] = recorded
+        if (!record) return { kind: await refusal(cardId) }
+        if (record.requestHash !== requestHash) return { kind: 'key_reused' }
+        const card = JSON.parse(record.response) as Card
+        if (inserted.length === 0) return { kind: 'replayed', card }
+        return { kind: 'updated', card }
+      } catch (error) {
+        const raced = await earlierEdit(write, operation)
         if (raced) return raced
         throw error
       }
@@ -577,9 +675,13 @@ export function collection(db: Database, ownerId: string) {
       const { cardId, contentVersion, key, requestHash, now } = write
       const operation = OPERATIONS.delete
       try {
-        const [, , , , recorded] = await db.batch([
+        const [, inserted, , , recorded] = await db.batch([
           forgetExpired(now),
-          recordIfCurrent(operation, write),
+          recordIfCurrent(
+            operation,
+            write,
+            cardAtVersion(cardId, contentVersion),
+          ),
           db.delete(cards).where(cardAtVersion(cardId, contentVersion)),
           dropEmptyCategories(),
           db
@@ -590,6 +692,7 @@ export function collection(db: Database, ownerId: string) {
         const [record] = recorded
         if (!record) return { kind: await refusal(cardId) }
         if (record.requestHash !== requestHash) return { kind: 'key_reused' }
+        if (inserted.length === 0) return { kind: 'replayed' }
         return { kind: 'deleted' }
       } catch (error) {
         const raced = await earlierDeletion(write)
