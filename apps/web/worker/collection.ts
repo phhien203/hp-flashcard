@@ -21,6 +21,12 @@ export type Database = DrizzleD1Database<typeof schema>
 
 export const database = (d1: D1Database): Database => drizzle(d1, { schema })
 
+/** Joins a Card to its Category, which always has the same owner. */
+const cardInCategory = and(
+  eq(categories.id, cards.categoryId),
+  eq(categories.ownerId, cards.ownerId),
+)
+
 /**
  * The columns that make up a Card in API responses. The Category's are
  * aliased: D1 returns batched rows as objects, where the two tables' `id`
@@ -73,16 +79,7 @@ export function collection(db: Database, ownerId: string) {
         sql`${cards.categoryId} in (select value from json_each(${JSON.stringify(categoryIds)}))`
       : undefined
   const fromCards = () =>
-    db
-      .select(cardColumns)
-      .from(cards)
-      .innerJoin(
-        categories,
-        and(
-          eq(categories.id, cards.categoryId),
-          eq(categories.ownerId, cards.ownerId),
-        ),
-      )
+    db.select(cardColumns).from(cards).innerJoin(categories, cardInCategory)
 
   /** The live record of an earlier request with this key, if any. */
   const findRecord = async (operation: string, key: string, now: number) =>
@@ -200,13 +197,7 @@ export function collection(db: Database, ownerId: string) {
       const rows = await db
         .select({ id: categories.id, name: categories.name, count: count() })
         .from(categories)
-        .innerJoin(
-          cards,
-          and(
-            eq(cards.categoryId, categories.id),
-            eq(cards.ownerId, categories.ownerId),
-          ),
-        )
+        .innerJoin(cards, cardInCategory)
         .where(eq(categories.ownerId, ownerId))
         .groupBy(categories.id)
       return rows.sort((a, b) => a.name.localeCompare(b.name))
@@ -303,13 +294,7 @@ export function collection(db: Database, ownerId: string) {
                 ),
               })
               .from(cards)
-              .innerJoin(
-                categories,
-                and(
-                  eq(categories.id, cards.categoryId),
-                  eq(categories.ownerId, cards.ownerId),
-                ),
-              )
+              .innerJoin(categories, cardInCategory)
               .where(and(eq(cards.ownerId, ownerId), eq(cards.id, cardId))),
           ),
           db

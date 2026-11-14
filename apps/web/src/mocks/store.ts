@@ -1,7 +1,6 @@
 import type { Card, CardPage, CardStatistics, Category } from '../api/types.js'
 import fixture from './fixtures/cards.json' with { type: 'json' }
 import {
-  BLANK_MESSAGES,
   CARD_QUOTA,
   categoryKey,
   checkCardText,
@@ -9,6 +8,7 @@ import {
   type CardTextErrors,
 } from '../domain/card-text.js'
 import { MASTERED } from '../domain/progress.js'
+import type { CardListQuery } from '../domain/requests.js'
 import { seededShuffle } from '../domain/shuffle.js'
 
 /** A Card as the fixture describes it: its Category by name. */
@@ -28,23 +28,9 @@ interface StoredCard {
   progress: number
 }
 
-export interface CardQuery {
-  categoryIds: readonly string[]
-  hideMastered: boolean
-  offset: number
-  limit: number
-  seed: number | undefined
-}
-
-/** The fields of a Card a client writes, before validation. */
-export type CardFields = CardText
-
-/** Why a write was rejected: messages keyed by field name. */
-export type FieldErrors = CardTextErrors
-
 export type WriteResult =
   | { ok: true; card: Card }
-  | { ok: false; reason: 'invalid'; fieldErrors: FieldErrors }
+  | { ok: false; reason: 'invalid'; fieldErrors: CardTextErrors }
   | { ok: false; reason: 'not_found' }
 
 /** A creation's outcome: as a write, or refused by the quota or a key. */
@@ -52,9 +38,6 @@ export type CreateResult =
   | (WriteResult & { replayed?: boolean })
   | { ok: false; reason: 'quota_exceeded' }
   | { ok: false; reason: 'key_reused' }
-
-/** The message for a blank field, as the app also shows it. */
-export const BLANK_FIELD_MESSAGES = BLANK_MESSAGES
 
 /**
  * The mock backend's in-memory data. It lives as long as the page: route
@@ -123,7 +106,7 @@ export class MockStore {
     offset,
     limit,
     seed,
-  }: CardQuery): CardPage {
+  }: CardListQuery): CardPage {
     let matching = this.#cards.filter(
       (card) =>
         (categoryIds.length === 0 || categoryIds.includes(card.categoryId)) &&
@@ -174,7 +157,7 @@ export class MockStore {
    * trimmed and must not be blank; the Category is matched by name ignoring
    * case and surrounding whitespace, or created.
    */
-  createCard(fields: CardFields): WriteResult {
+  createCard(fields: CardText): WriteResult {
     const checked = checkCardText(fields)
     if (!checked.ok)
       return { ok: false, reason: 'invalid', fieldErrors: checked.errors }
@@ -197,7 +180,7 @@ export class MockStore {
    * reusing it for a different request is refused.
    */
   createCardOnce(
-    fields: CardFields,
+    fields: CardText,
     key: string,
     fingerprint: string,
   ): CreateResult {
@@ -222,7 +205,7 @@ export class MockStore {
    * keeps its id, Progress and place in the default order; a Category left
    * without Cards ceases to exist.
    */
-  updateCard(id: string, fields: Partial<CardFields>): WriteResult {
+  updateCard(id: string, fields: Partial<CardText>): WriteResult {
     const card = this.#cards.find((c) => c.id === id)
     if (!card) return { ok: false, reason: 'not_found' }
     const checked = checkCardText(fields)
