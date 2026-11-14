@@ -4,6 +4,9 @@ A flashcard app for creating and organizing question-and-answer cards and studyi
 
 ## Language
 
+**Collection**:
+A person's private set of cards, categories, and progress, accessible to that person across devices.
+
 **Card**:
 A flashcard with a required question, answer, and exactly one category.
 
