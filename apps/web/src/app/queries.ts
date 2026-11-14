@@ -7,7 +7,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import { ApiError, type ApiClient } from '../api/client.js'
+import {
+  ApiError,
+  type ApiClient,
+  type VersionedWrite,
+  type WriteResult,
+} from '../api/client.js'
 import type { Card, CardInput, CardPatch } from '../api/types.js'
 import { useApi } from './api-context.js'
 
@@ -26,8 +31,17 @@ export function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       // Failures show at once, with a Retry button, instead of after
-      // silent automatic retries.
-      queries: { retry: false },
+      // silent automatic retries. The app needs a connection: offline,
+      // requests fail and say so ("always") instead of pausing until the
+      // connection returns, so no write is ever queued. Coming back to the
+      // window refetches what is shown, as other devices may have changed
+      // the Collection.
+      queries: {
+        retry: false,
+        networkMode: 'always',
+        refetchOnWindowFocus: true,
+      },
+      mutations: { networkMode: 'always' },
     },
   })
 }
@@ -143,9 +157,18 @@ export const fetchCard = (
  * After a successful write: store the saved Card and refetch every Card
  * listing and the Category counts. The mutation stays pending until they
  * have arrived, so the screen changes once, when it is coherent.
+ *
+ * A replayed result (a retry the backend had already completed) describes
+ * the Card as it was then, which later writes may have overtaken: it is
+ * never stored, only refetched.
  */
-async function afterWrite(queryClient: QueryClient, card: Card) {
-  queryClient.setQueryData(queryKeys.card(card.id), card)
+async function afterWrite(
+  queryClient: QueryClient,
+  { value: card, replayed }: WriteResult<Card>,
+) {
+  if (replayed)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.card(card.id) })
+  else queryClient.setQueryData(queryKeys.card(card.id), card)
   await refetchCollection(queryClient)
 }
 
@@ -183,18 +206,34 @@ export function useCreateCard() {
       input: CardInput
       idempotencyKey: string
     }) => api.createCard(input, idempotencyKey),
-    onSuccess: (card) => afterWrite(queryClient, card),
+    onSuccess: (result) => afterWrite(queryClient, result),
   })
 }
 
-/** Edits a Card. Nothing changes on screen until the backend agrees. */
+/**
+ * Edits a Card, if it is still at the version the edit was based on.
+ * Nothing changes on screen until the backend agrees. A conflict (another
+ * device changed the Card) refetches the Collection, as does finding the
+ * Card gone.
+ */
 export function useUpdateCard() {
   const queryClient = useQueryClient()
   const api = useApi()
   return useMutation({
-    mutationFn: ({ cardId, patch }: { cardId: string; patch: CardPatch }) =>
-      api.updateCard(cardId, patch),
-    onSuccess: (card) => afterWrite(queryClient, card),
+    mutationFn: ({
+      cardId,
+      patch,
+      write,
+    }: {
+      cardId: string
+      patch: CardPatch
+      write: VersionedWrite
+    }) => api.updateCard(cardId, patch, write),
+    onSuccess: (result) => afterWrite(queryClient, result),
+    onError: async (error) => {
+      if (isConflict(error) || isNotFound(error))
+        await refetchCollection(queryClient)
+    },
   })
 }
 
@@ -210,7 +249,8 @@ export function useSetProgress() {
   return useMutation({
     mutationFn: ({ cardId, progress }: { cardId: string; progress: number }) =>
       api.setCardProgress(cardId, progress),
-    onSuccess: (card) => afterWrite(queryClient, card),
+    onSuccess: (card) =>
+      afterWrite(queryClient, { value: card, replayed: false }),
   })
 }
 
@@ -218,11 +258,16 @@ export function useSetProgress() {
 export const isNotFound = (error: unknown) =>
   error instanceof ApiError && error.status === 404
 
+/** Whether a failed write found the Card changed since its version. */
+export const isConflict = (error: unknown) =>
+  error instanceof ApiError && error.body?.code === 'version_conflict'
+
 /**
- * Deletes a Card. Nothing changes on screen until the backend agrees: the
- * mutation stays pending until the listings and counts have refetched. A
- * Card the backend no longer has (404) is gone either way, so that also
- * refetches, to drop it from the screen.
+ * Deletes a Card, if it is still at the version the deletion was based on.
+ * Nothing changes on screen until the backend agrees: the mutation stays
+ * pending until the listings and counts have refetched. A Card the backend
+ * no longer has (404) is gone either way, so that also refetches, to drop
+ * it from the screen; so does a conflict, to show the newer content.
  */
 export function useDeleteCard() {
   const queryClient = useQueryClient()
@@ -232,10 +277,17 @@ export function useDeleteCard() {
     await refetchCollection(queryClient)
   }
   return useMutation({
-    mutationFn: (cardId: string) => api.deleteCard(cardId),
-    onSuccess: (_, cardId) => forget(cardId),
-    onError: async (error, cardId) => {
+    mutationFn: ({
+      cardId,
+      write,
+    }: {
+      cardId: string
+      write: VersionedWrite
+    }) => api.deleteCard(cardId, write),
+    onSuccess: (_, { cardId }) => forget(cardId),
+    onError: async (error, { cardId }) => {
       if (isNotFound(error)) await forget(cardId)
+      else if (isConflict(error)) await refetchCollection(queryClient)
     },
   })
 }

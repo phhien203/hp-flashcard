@@ -1,4 +1,8 @@
-import { IDEMPOTENCY_KEY_HEADER } from '../domain/idempotency.js'
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  IDEMPOTENT_REPLAYED_HEADER,
+} from '../domain/idempotency.js'
+import { ifMatch, IF_MATCH_HEADER } from '../domain/versions.js'
 import type {
   ApiErrorBody,
   Card,
@@ -69,12 +73,38 @@ export interface ApiClientOptions {
 }
 
 /**
+ * A write's result. `replayed` says the backend repeated the result of an
+ * earlier request with the same idempotency key: it acknowledges success,
+ * but describes the Card as it was then, not as it is now.
+ */
+export interface WriteResult<T> {
+  value: T
+  replayed: boolean
+}
+
+/** What an edit or deletion of an existing Card names. */
+export interface VersionedWrite {
+  /** The `contentVersion` the change was based on. */
+  contentVersion: number
+  /** The same for every retry of this intended write. */
+  idempotencyKey: string
+}
+
+const versionedHeaders = ({
+  contentVersion,
+  idempotencyKey,
+}: VersionedWrite) => ({
+  [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+  [IF_MATCH_HEADER]: ifMatch(contentVersion),
+})
+
+/**
  * A typed client for the API in api/openapi.yaml, on native `fetch`, for
  * one signed-in account. It neither knows nor cares whether MSW or a real
  * server answers.
  */
 export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
-  async function request<T>(
+  async function send<T>(
     path: string,
     {
       method = 'GET',
@@ -87,7 +117,7 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
       signal?: AbortSignal
       headers?: Record<string, string>
     } = {},
-  ): Promise<T> {
+  ): Promise<WriteResult<T>> {
     const token = await getToken()
     signal?.throwIfAborted()
     const response = await fetch(`${baseUrl}${path}`, {
@@ -105,10 +135,14 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
       const body: unknown = await response.json().catch(() => undefined)
       throw new ApiError(response.status, isErrorBody(body) ? body : undefined)
     }
+    const replayed = response.headers.get(IDEMPOTENT_REPLAYED_HEADER) === 'true'
     // 204 No Content has no body.
-    if (response.status === 204) return undefined as T
-    return (await response.json()) as T
+    if (response.status === 204) return { value: undefined as T, replayed }
+    return { value: (await response.json()) as T, replayed }
   }
+
+  const request = async <T>(...args: Parameters<typeof send>) =>
+    (await send<T>(...args)).value
 
   return {
     listCards: (query: ListCardsQuery, signal?: AbortSignal) =>
@@ -120,15 +154,20 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
      * `idempotencyKey`, so the backend creates it at most once.
      */
     createCard: (input: CardInput, idempotencyKey: string) =>
-      request<Card>('/api/cards', {
+      send<Card>('/api/cards', {
         method: 'POST',
         body: input,
         headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       }),
-    updateCard: (cardId: string, patch: CardPatch) =>
-      request<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
+    /**
+     * Edits a Card if it is still at `contentVersion` (else `409`).
+     * Retrying the same intended edit must repeat its `idempotencyKey`.
+     */
+    updateCard: (cardId: string, patch: CardPatch, write: VersionedWrite) =>
+      send<Card>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'PATCH',
         body: patch,
+        headers: versionedHeaders(write),
       }),
     setCardProgress: (cardId: string, progress: ProgressInput['progress']) =>
       request<Card>(`/api/cards/${encodeURIComponent(cardId)}/progress`, {
@@ -139,9 +178,14 @@ export function createApiClient({ baseUrl = '', getToken }: ApiClientOptions) {
       request<CardStatistics>(withQuery('/api/cards/statistics', query), {
         signal,
       }),
-    deleteCard: (cardId: string) =>
-      request<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
+    /**
+     * Deletes a Card if it is still at `contentVersion` (else `409`).
+     * Retrying the same intended deletion must repeat its `idempotencyKey`.
+     */
+    deleteCard: (cardId: string, write: VersionedWrite) =>
+      send<void>(`/api/cards/${encodeURIComponent(cardId)}`, {
         method: 'DELETE',
+        headers: versionedHeaders(write),
       }),
     listCategories: (signal?: AbortSignal) =>
       request<CategoryList>('/api/categories', { signal }),

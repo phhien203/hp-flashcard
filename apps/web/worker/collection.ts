@@ -1,4 +1,14 @@
-import { and, count, desc, eq, gt, lte, sql, type SQL } from 'drizzle-orm'
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  lte,
+  notExists,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1'
 
 import type { components } from '../src/api/schema.js'
@@ -7,7 +17,7 @@ import {
   categoryKey,
   type CardText,
 } from '../src/domain/card-text.js'
-import { IDEMPOTENCY_TTL_MS } from '../src/domain/idempotency.js'
+import { IDEMPOTENCY_TTL_MS, OPERATIONS } from '../src/domain/idempotency.js'
 import { MASTERED } from '../src/domain/progress.js'
 import type { CardListQuery } from '../src/domain/requests.js'
 import { seededShuffle } from '../src/domain/shuffle.js'
@@ -37,6 +47,7 @@ const cardColumns = {
   question: cards.question,
   answer: cards.answer,
   progress: cards.progress,
+  contentVersion: cards.contentVersion,
   categoryId: sql<string>`${categories.id}`.as('category_id'),
   categoryName: sql<string>`${categories.name}`.as('category_name'),
 }
@@ -46,6 +57,7 @@ const toCard = (row: {
   question: string
   answer: string
   progress: number
+  contentVersion: number
   categoryId: string
   categoryName: string
 }): Card => ({
@@ -54,7 +66,21 @@ const toCard = (row: {
   answer: row.answer,
   category: { id: row.categoryId, name: row.categoryName },
   progress: row.progress,
+  contentVersion: row.contentVersion,
 })
+
+/**
+ * A Card as JSON, built by the database from the joined Card and Category
+ * rows: the response an idempotency record keeps, exactly as committed.
+ */
+const cardJson = sql<string>`json_object(
+  'id', ${cards.id},
+  'question', ${cards.question},
+  'answer', ${cards.answer},
+  'category', json_object('id', ${categories.id}, 'name', ${categories.name}),
+  'progress', ${cards.progress},
+  'contentVersion', ${cards.contentVersion}
+)`
 
 /** What creating a Card came to. */
 export type Creation =
@@ -63,7 +89,33 @@ export type Creation =
   | { kind: 'key_reused' }
   | { kind: 'quota_exceeded' }
 
-const CREATE_CARD = 'createCard'
+/** What editing a Card came to. */
+export type Edit =
+  | { kind: 'updated'; card: Card }
+  | { kind: 'replayed'; card: Card }
+  | { kind: 'key_reused' }
+  | { kind: 'not_found' }
+  | { kind: 'conflict' }
+
+/** What deleting a Card came to. */
+export type Deletion =
+  | { kind: 'deleted' }
+  | { kind: 'replayed' }
+  | { kind: 'key_reused' }
+  | { kind: 'not_found' }
+  | { kind: 'conflict' }
+
+/** The version-checked writes to an existing Card. */
+export interface VersionedWrite {
+  cardId: string
+  /** The `contentVersion` the request was based on. */
+  contentVersion: number
+  key: string
+  requestHash: string
+  now: number
+}
+
+const CREATE_CARD = OPERATIONS.create
 
 /**
  * One owner's Collection. Every query is scoped to `ownerId`, which comes
@@ -109,6 +161,111 @@ export function collection(db: Database, ownerId: string) {
       ? { kind: 'replayed', card: JSON.parse(record.response) as Card }
       : { kind: 'key_reused' }
   }
+
+  /** An earlier edit with this key: repeated, or refused. */
+  const earlierEdit = async ({
+    key,
+    requestHash,
+    now,
+  }: VersionedWrite): Promise<Edit | undefined> => {
+    const record = await findRecord(OPERATIONS.update, key, now)
+    if (!record) return undefined
+    return record.requestHash === requestHash
+      ? { kind: 'replayed', card: JSON.parse(record.response) as Card }
+      : { kind: 'key_reused' }
+  }
+
+  /** An earlier deletion with this key: repeated, or refused. */
+  const earlierDeletion = async ({
+    key,
+    requestHash,
+    now,
+  }: VersionedWrite): Promise<Deletion | undefined> => {
+    const record = await findRecord(OPERATIONS.delete, key, now)
+    if (!record) return undefined
+    return record.requestHash === requestHash
+      ? { kind: 'replayed' }
+      : { kind: 'key_reused' }
+  }
+
+  /** Why a version-checked write found nothing to change. */
+  const refusal = async (cardId: string) => {
+    const [found] = await db
+      .select({ id: cards.id })
+      .from(cards)
+      .where(and(ownCards, eq(cards.id, cardId)))
+    return found ? ('conflict' as const) : ('not_found' as const)
+  }
+
+  /** The owner's Card `cardId`, if it is still at `contentVersion`. */
+  const cardAtVersion = (cardId: string, contentVersion: number) =>
+    and(
+      ownCards,
+      eq(cards.id, cardId),
+      eq(cards.contentVersion, contentVersion),
+    )
+
+  /** Forgets the owner's expired records, so their keys write anew. */
+  const forgetExpired = (now: number) =>
+    db
+      .delete(idempotencyRecords)
+      .where(
+        and(
+          eq(idempotencyRecords.ownerId, ownerId),
+          lte(idempotencyRecords.expiresAt, now),
+        ),
+      )
+
+  /**
+   * Records a write under its key, as part of the write's batch, but only
+   * if the Card is still at the version the request was based on: the
+   * record's existence is what the batch's other statements and the outcome
+   * hinge on. The response is filled in once the write has happened.
+   */
+  const recordIfCurrent = (
+    operation: string,
+    { cardId, contentVersion, key, requestHash, now }: VersionedWrite,
+  ) =>
+    db.insert(idempotencyRecords).select(
+      db
+        .select({
+          ownerId: cards.ownerId,
+          operation: sql<string>`${operation}`.as('operation'),
+          key: sql<string>`${key}`.as('key'),
+          requestHash: sql<string>`${requestHash}`.as('requestHash'),
+          response: sql<string>`''`.as('response'),
+          createdAt: sql<number>`${now}`.as('createdAt'),
+          expiresAt: sql<number>`${now + IDEMPOTENCY_TTL_MS}`.as('expiresAt'),
+        })
+        .from(cards)
+        .where(cardAtVersion(cardId, contentVersion)),
+    )
+
+  const thisRecord = (operation: string, key: string) =>
+    and(
+      eq(idempotencyRecords.ownerId, ownerId),
+      eq(idempotencyRecords.operation, operation),
+      eq(idempotencyRecords.key, key),
+    )
+
+  /** Deletes the owner's Categories that no longer have Cards. */
+  const dropEmptyCategories = () =>
+    db.delete(categories).where(
+      and(
+        eq(categories.ownerId, ownerId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(cards)
+            .where(
+              and(
+                eq(cards.ownerId, categories.ownerId),
+                eq(cards.categoryId, categories.id),
+              ),
+            ),
+        ),
+      ),
+    )
 
   return {
     /** A page of matching Cards: filtered, shuffled by `seed`, then paged. */
@@ -230,15 +387,7 @@ export function collection(db: Database, ownerId: string) {
       const nameKey = categoryKey(fields.category)
       try {
         const [, , , , recorded] = await db.batch([
-          // Expired records are forgotten, so their keys create anew.
-          db
-            .delete(idempotencyRecords)
-            .where(
-              and(
-                eq(idempotencyRecords.ownerId, ownerId),
-                lte(idempotencyRecords.expiresAt, now),
-              ),
-            ),
+          forgetExpired(now),
           db
             .insert(categories)
             .values({
@@ -281,13 +430,7 @@ export function collection(db: Database, ownerId: string) {
                 operation: sql<string>`${CREATE_CARD}`.as('operation'),
                 key: sql<string>`${key}`.as('key'),
                 requestHash: sql<string>`${requestHash}`.as('requestHash'),
-                response: sql<string>`json_object(
-                  'id', ${cards.id},
-                  'question', ${cards.question},
-                  'answer', ${cards.answer},
-                  'category', json_object('id', ${categories.id}, 'name', ${categories.name}),
-                  'progress', ${cards.progress}
-                )`.as('response'),
+                response: sql<string>`${cardJson}`.as('response'),
                 createdAt: sql<number>`${now}`.as('createdAt'),
                 expiresAt: sql<number>`${now + IDEMPOTENCY_TTL_MS}`.as(
                   'expiresAt',
@@ -319,6 +462,140 @@ export function collection(db: Database, ownerId: string) {
           .from(cards)
           .where(ownCards)
         if ((owned?.total ?? 0) >= CARD_QUOTA) return { kind: 'quota_exceeded' }
+        throw error
+      }
+    },
+
+    /**
+     * Edits a Card with trimmed, valid `fields`, if it is still at the
+     * request's `contentVersion`, at most once per idempotency key.
+     *
+     * One D1 batch, so one transaction: the record of the key, inserted only
+     * while the Card is at the expected version; the Category (matched or
+     * created); the Card, updated under the same version condition and
+     * advanced to the next version; the response, as the database now holds
+     * the Card; and the removal of Categories left without Cards. Of two
+     * edits based on the same version, the second finds the Card moved on
+     * and changes nothing. Nothing written means the Card is gone or has
+     * changed, which a read then tells apart.
+     */
+    async updateCard(
+      fields: Partial<CardText>,
+      write: VersionedWrite,
+    ): Promise<Edit> {
+      const earlier = await earlierEdit(write)
+      if (earlier) return earlier
+
+      const { cardId, contentVersion, key, requestHash, now } = write
+      const operation = OPERATIONS.update
+      const nameKey =
+        fields.category === undefined ? undefined : categoryKey(fields.category)
+      try {
+        const [, , , , , , recorded] = await db.batch([
+          forgetExpired(now),
+          recordIfCurrent(operation, write),
+          // Matching an equivalent Category, or creating it. If the Card
+          // turns out to have moved on, the cleanup below removes it again.
+          nameKey === undefined
+            ? db
+                .select({ one: sql`1` })
+                .from(categories)
+                .limit(0)
+            : db
+                .insert(categories)
+                .values({
+                  id: crypto.randomUUID(),
+                  ownerId,
+                  name: fields.category!,
+                  nameKey,
+                  createdAt: now,
+                })
+                .onConflictDoNothing({
+                  target: [categories.ownerId, categories.nameKey],
+                }),
+          db
+            .update(cards)
+            .set({
+              question: fields.question,
+              answer: fields.answer,
+              categoryId:
+                nameKey === undefined
+                  ? undefined
+                  : sql`(select ${categories.id} from ${categories} where ${and(
+                      eq(categories.ownerId, ownerId),
+                      eq(categories.nameKey, nameKey),
+                    )})`,
+              contentVersion: sql`${cards.contentVersion} + 1`,
+            })
+            .where(cardAtVersion(cardId, contentVersion)),
+          db
+            .update(idempotencyRecords)
+            .set({
+              response: sql`(select ${cardJson} from ${cards} inner join ${categories} on ${cardInCategory} where ${and(
+                ownCards,
+                eq(cards.id, cardId),
+              )})`,
+            })
+            .where(
+              and(
+                thisRecord(operation, key),
+                eq(idempotencyRecords.response, ''),
+              ),
+            ),
+          dropEmptyCategories(),
+          db
+            .select({
+              requestHash: idempotencyRecords.requestHash,
+              response: idempotencyRecords.response,
+            })
+            .from(idempotencyRecords)
+            .where(thisRecord(operation, key)),
+        ])
+        const [record] = recorded
+        if (!record) return { kind: await refusal(cardId) }
+        // A request with the same key committed first.
+        if (record.requestHash !== requestHash) return { kind: 'key_reused' }
+        return { kind: 'updated', card: JSON.parse(record.response) as Card }
+      } catch (error) {
+        const raced = await earlierEdit(write)
+        if (raced) return raced
+        throw error
+      }
+    },
+
+    /**
+     * Permanently deletes a Card and its Progress, if it is still at the
+     * request's `contentVersion`, at most once per idempotency key.
+     *
+     * One D1 batch, as for edits: the record of the key, inserted only while
+     * the Card is at the expected version; the Card, deleted under the same
+     * condition, which frees its place in the quota in the same transaction;
+     * and the removal of a Category left without Cards.
+     */
+    async deleteCard(write: VersionedWrite): Promise<Deletion> {
+      const earlier = await earlierDeletion(write)
+      if (earlier) return earlier
+
+      const { cardId, contentVersion, key, requestHash, now } = write
+      const operation = OPERATIONS.delete
+      try {
+        const [, , , , recorded] = await db.batch([
+          forgetExpired(now),
+          recordIfCurrent(operation, write),
+          db.delete(cards).where(cardAtVersion(cardId, contentVersion)),
+          dropEmptyCategories(),
+          db
+            .select({ requestHash: idempotencyRecords.requestHash })
+            .from(idempotencyRecords)
+            .where(thisRecord(operation, key)),
+        ])
+        const [record] = recorded
+        if (!record) return { kind: await refusal(cardId) }
+        if (record.requestHash !== requestHash) return { kind: 'key_reused' }
+        return { kind: 'deleted' }
+      } catch (error) {
+        const raced = await earlierDeletion(write)
+        if (raced) return raced
         throw error
       }
     },

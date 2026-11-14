@@ -90,7 +90,32 @@ export const SCENARIOS = {
       return notFound(cardId)
     }),
   ],
+  /**
+   * Before the first Card edit lands, another device edits the same Card,
+   * so the edit conflicts (409).
+   */
+  'edit-conflict': (store: MockStore) => [editedElsewhereFirst('patch', store)],
+  /**
+   * Before the first Card deletion lands, another device edits the Card,
+   * so the deletion conflicts (409).
+   */
+  'delete-conflict': (store: MockStore) => [
+    editedElsewhereFirst('delete', store),
+  ],
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
+
+/** What another device changes a Card's answer to, in the conflict scenarios. */
+export const ELSEWHERE_ANSWER = 'Changed on another device.'
+
+/** Edits the Card of the first matching write elsewhere, then lets it through. */
+function editedElsewhereFirst(method: 'patch' | 'delete', store: MockStore) {
+  let done = false
+  return http[method]('/api/cards/:cardId', ({ params }) => {
+    if (done) return
+    done = true
+    store.updateCard(String(params.cardId), { answer: ELSEWHERE_ANSWER })
+  })
+}
 
 export type ScenarioName = keyof typeof SCENARIOS
 

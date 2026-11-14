@@ -2,8 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { contractChecker, type Method } from '../src/api/contract-check.js'
 import { CARD_QUOTA } from '../src/domain/card-text.js'
-import { IDEMPOTENCY_KEY_HEADER } from '../src/domain/idempotency.js'
-import { IDEMPOTENCY_TTL_MS } from '../src/domain/idempotency.js'
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  IDEMPOTENCY_TTL_MS,
+} from '../src/domain/idempotency.js'
+import { ifMatch, IF_MATCH_HEADER } from '../src/domain/versions.js'
 import { collection, database, forgetExpiredRecords } from './collection.js'
 import {
   createIssuer,
@@ -25,6 +28,7 @@ type Card = {
   answer: string
   category: { id: string; name: string }
   progress: number
+  contentVersion: number
 }
 type CardPage = { items: Card[]; total: number; nextOffset: number | null }
 
@@ -72,6 +76,43 @@ function newAccount() {
         body,
         headers: { [IDEMPOTENCY_KEY_HEADER]: key },
       }),
+    /** Edits `cardId` as of `version`. */
+    edit: (
+      cardId: string,
+      version: number,
+      body: unknown,
+      { status = 200, key = newKey() }: { status?: number; key?: string } = {},
+    ) =>
+      call('patch', '/api/cards/{cardId}', `/api/cards/${cardId}`, status, {
+        body,
+        headers: {
+          [IDEMPOTENCY_KEY_HEADER]: key,
+          [IF_MATCH_HEADER]: ifMatch(version),
+        },
+      }),
+    /** Deletes `cardId` as of `version`. */
+    remove: (
+      cardId: string,
+      version: number,
+      { status = 204, key = newKey() }: { status?: number; key?: string } = {},
+    ) =>
+      call('delete', '/api/cards/{cardId}', `/api/cards/${cardId}`, status, {
+        headers: {
+          [IDEMPOTENCY_KEY_HEADER]: key,
+          [IF_MATCH_HEADER]: ifMatch(version),
+        },
+      }),
+    get: (cardId: string, status = 200) =>
+      call('get', '/api/cards/{cardId}', `/api/cards/${cardId}`, status),
+    statistics: async (query = '') =>
+      (
+        await call(
+          'get',
+          '/api/cards/statistics',
+          `/api/cards/statistics${query}`,
+          200,
+        )
+      ).body as Record<string, number>,
     list: async (query = '') =>
       (await call('get', '/api/cards', `/api/cards${query}`, 200))
         .body as CardPage,
@@ -547,17 +588,19 @@ describe('the Card quota', () => {
     expect(headers.get('Idempotent-Replayed')).toBe('true')
     const { body } = await account.create(card('one more'), { status: 409 })
     expect(body).toMatchObject({ code: 'quota_exceeded' })
+    // Deleting a Card makes room for exactly one more.
+    const last = (await account.list('?limit=1')).items[0]!
+    await account.remove(last.id, last.contentVersion)
+    await account.create(card('in its place'))
+    await account.create(card('one too many'), { status: 409 })
+    expect((await account.list()).total).toBe(CARD_QUOTA)
     // Another account's quota is its own.
     await newAccount().create(card(1))
   }, 120_000)
 })
 
 describe('operations of later slices', () => {
-  it.for([
-    ['patch', '/api/cards/{cardId}', { question: 'Q?' }],
-    ['delete', '/api/cards/{cardId}', undefined],
-    ['put', '/api/cards/{cardId}/progress', { progress: 1 }],
-  ] as const)(
+  it.for([['put', '/api/cards/{cardId}/progress', { progress: 1 }]] as const)(
     '%s %s answers 501 and changes nothing',
     async ([method, template, body]) => {
       const account = newAccount()
@@ -585,5 +628,521 @@ describe('durability', () => {
       { headers: account.auth('sess_after_restart') },
     )
     expect(body).toEqual(created)
+  })
+})
+
+/** Sets a Card's Progress in the database: setup only, until Progress saves exist. */
+async function setProgress(cardId: string, progress: number) {
+  await (
+    await worker.env()
+  ).DB.prepare('update cards set progress = ? where id = ?')
+    .bind(progress, cardId)
+    .run()
+}
+
+describe('browsing', () => {
+  it('filters by several Categories, hides Mastered Cards, and keeps statistics to the Category filter', async () => {
+    const account = newAccount()
+    const made: Card[] = []
+    for (const [n, category] of ['A', 'B', 'C', 'A', 'B'].entries())
+      made.push((await account.create(card(n, category))).body as Card)
+    await setProgress(made[0]!.id, 5)
+    await setProgress(made[1]!.id, 2)
+    const ids = Object.fromEntries(
+      (await account.categories()).map((c) => [c.name, c.id]),
+    )
+
+    const ab = await account.list(`?category=${ids.A}&category=${ids.B}`)
+    expect(ab.items.map((c) => c.id)).toEqual(
+      [made[4], made[3], made[1], made[0]].map((c) => c!.id),
+    )
+    const unmastered = await account.list(
+      `?category=${ids.A}&category=${ids.B}&hideMastered=true`,
+    )
+    expect(unmastered.total).toBe(3)
+    expect(unmastered.items.map((c) => c.id)).not.toContain(made[0]!.id)
+
+    const expected = { total: 4, notStarted: 2, inProgress: 1, mastered: 1 }
+    for (const extra of ['', '&hideMastered=true', '&offset=2&limit=1&seed=9'])
+      expect(
+        await account.statistics(
+          `?category=${ids.A}&category=${ids.B}${extra}`,
+        ),
+      ).toEqual(expected)
+    expect(await account.statistics()).toMatchObject({ total: 5 })
+    expect(await account.list('?category=nobody')).toMatchObject({ total: 0 })
+  })
+
+  it('shuffles deterministically by seed and Card, and keeps the order through writes', async () => {
+    const account = newAccount()
+    const made: Card[] = []
+    for (let n = 0; n < 30; n++)
+      made.push((await account.create(card(n, n % 3 ? 'X' : 'Y'))).body as Card)
+
+    const shuffled = async (seed: number) => {
+      const ids: string[] = []
+      for (let offset = 0; ;) {
+        const page = await account.list(`?seed=${seed}&offset=${offset}`)
+        ids.push(...page.items.map((c) => c.id))
+        if (page.nextOffset === null) return ids
+        offset = page.nextOffset
+      }
+    }
+    const order = await shuffled(42)
+    expect(order).toHaveLength(30)
+    expect(new Set(order)).toEqual(new Set(made.map((c) => c.id)))
+    expect(await shuffled(42)).toEqual(order)
+    expect(await shuffled(43)).not.toEqual(order)
+
+    // Creating, editing and deleting leave the others' relative order.
+    const added = (await account.create(card('new'))).body as Card
+    const edited = made[7]!
+    await account.edit(edited.id, 1, { question: 'Changed?', category: 'Y' })
+    const removed = made[11]!
+    await account.remove(removed.id, 1)
+    const after = await shuffled(42)
+    expect(after.filter((id) => id !== added.id)).toEqual(
+      order.filter((id) => id !== removed.id),
+    )
+  })
+
+  it.for([
+    ['offset=-1', 'offset'],
+    ['offset=1.5', 'offset'],
+    ['limit=0', 'limit'],
+    ['limit=49', 'limit'],
+    ['limit=ten', 'limit'],
+    ['hideMastered=yes', 'hideMastered'],
+    ['seed=4294967296', 'seed'],
+    ['seed=-1', 'seed'],
+    ['category=', 'category'],
+  ])('rejects ?%s with a field error', async ([query, field]) => {
+    const account = newAccount()
+    const { body } = await account.call(
+      'get',
+      '/api/cards',
+      `/api/cards?${query}`,
+      400,
+    )
+    expect(body).toMatchObject({
+      code: 'validation_failed',
+      fieldErrors: { [field!]: expect.any(String) },
+    })
+  })
+
+  it('ignores unknown query parameters and pages 12 at a time by default', async () => {
+    const account = newAccount()
+    for (let n = 0; n < 13; n++) await account.create(card(n))
+    expect(await account.list('?unknown=1')).toMatchObject({
+      limit: 12,
+      nextOffset: 12,
+      total: 13,
+    })
+    expect(await account.list('?offset=99')).toMatchObject({
+      items: [],
+      nextOffset: null,
+    })
+  })
+
+  it('marks every response private and uncacheable', async () => {
+    const account = newAccount()
+    const { headers } = await account.call(
+      'get',
+      '/api/cards',
+      '/api/cards',
+      200,
+    )
+    expect(headers.get('Cache-Control')).toBe('private, no-store')
+    expect(headers.get('Vary')).toContain('Authorization')
+    const anonymous = await worker.fetch('/api/cards')
+    expect(anonymous.status).toBe(401)
+    expect(anonymous.headers.get('Cache-Control')).toBe('private, no-store')
+  })
+})
+
+describe('editing a Card', () => {
+  it('edits content and Category, keeping identity, Progress and default place', async () => {
+    const account = newAccount()
+    const first = (await account.create(card(1, 'Old'))).body as Card
+    const second = (await account.create(card(2))).body as Card
+    await setProgress(first.id, 3)
+
+    const { body, headers } = await account.edit(first.id, 1, {
+      question: '  Edited?  ',
+      category: ' general ',
+    })
+    expect(headers.get('Idempotent-Replayed')).toBeNull()
+    expect(body).toEqual({
+      id: first.id,
+      question: 'Edited?',
+      answer: first.answer,
+      category: second.category,
+      progress: 3,
+      contentVersion: 2,
+    })
+    expect((await account.list()).items.map((c) => c.id)).toEqual([
+      second.id,
+      first.id,
+    ])
+    expect((await account.get(first.id)).body).toEqual(body)
+    // "Old" lost its last Card, and with it its existence.
+    expect(await account.categories()).toEqual([
+      { ...second.category, count: 2 },
+    ])
+  })
+
+  it.for([
+    [{ question: '  ' }, 'question'],
+    [{ answer: 'x'.repeat(10001) }, 'answer'],
+    [{ category: 'Bio\u0000logy' }, 'category'],
+    [{ progress: 5 }, 'progress'],
+    [{ question: 3 }, 'question'],
+  ] as const)(
+    'rejects a bad %# field, changing nothing',
+    async ([patch, field]) => {
+      const account = newAccount()
+      const created = (await account.create(card(1))).body as Card
+      const { body } = await account.edit(created.id, 1, patch, {
+        status: 400,
+      })
+      expect(body).toMatchObject({
+        fieldErrors: { [field]: expect.any(String) },
+      })
+      expect((await account.get(created.id)).body).toEqual(created)
+    },
+  )
+
+  it('rejects an empty edit', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    await account.edit(created.id, 1, {}, { status: 400 })
+  })
+
+  it.for([
+    [{}, ['Idempotency-Key', 'If-Match']],
+    [{ 'If-Match': '3' }, ['Idempotency-Key', 'If-Match']],
+    [{ 'If-Match': '"0"', 'Idempotency-Key': 'k'.repeat(20) }, ['If-Match']],
+    [{ 'If-Match': '"1"', 'Idempotency-Key': 'short' }, ['Idempotency-Key']],
+  ] as const)(
+    'rejects missing or malformed write headers %j',
+    async ([headers, fields]) => {
+      const account = newAccount()
+      const created = (await account.create(card(1))).body as Card
+      for (const [method, body] of [
+        ['patch', { question: 'Q?' }],
+        ['delete', undefined],
+      ] as const) {
+        const { body: error } = await account.call(
+          method,
+          '/api/cards/{cardId}',
+          `/api/cards/${created.id}`,
+          400,
+          { body, headers },
+        )
+        expect(
+          Object.keys((error as { fieldErrors: object }).fieldErrors).sort(),
+        ).toEqual([...fields].sort())
+      }
+      expect((await account.get(created.id)).body).toEqual(created)
+    },
+  )
+
+  it('refuses a stale edit with 409, keeping the newer content', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    const newer = (await account.edit(created.id, 1, { answer: 'Newer.' }))
+      .body as Card
+    const { body } = await account.edit(
+      created.id,
+      1,
+      { answer: 'Stale.' },
+      { status: 409 },
+    )
+    expect(body).toMatchObject({ code: 'version_conflict' })
+    expect((await account.get(created.id)).body).toEqual(newer)
+  })
+
+  it('lets only one of several concurrent edits of the same version succeed', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, async (_, n) => {
+        const response = await worker.fetch(`/api/cards/${created.id}`, {
+          method: 'PATCH',
+          headers: {
+            ...account.auth(),
+            'Content-Type': 'application/json',
+            [IDEMPOTENCY_KEY_HEADER]: newKey(),
+            [IF_MATCH_HEADER]: ifMatch(1),
+          },
+          body: JSON.stringify({ answer: `Edit ${n}.`, category: `Cat ${n}` }),
+        })
+        return {
+          status: response.status,
+          body: (await response.json()) as Card,
+        }
+      }),
+    )
+    const won = responses.filter((r) => r.status === 200)
+    expect(won).toHaveLength(1)
+    expect(responses.filter((r) => r.status === 409)).toHaveLength(7)
+    expect((await account.get(created.id)).body).toEqual(won[0]!.body)
+    // The losers' Categories didn't survive.
+    expect((await account.categories()).map((c) => c.name)).toEqual([
+      won[0]!.body.category.name,
+    ])
+  })
+
+  it("answers 404 for another account's Card, revealing and changing nothing", async () => {
+    const alice = newAccount()
+    const bob = newAccount()
+    const hers = (await alice.create(card('hers'))).body as Card
+    for (const version of [1, 2]) {
+      const edit = await bob.edit(
+        hers.id,
+        version,
+        { answer: 'Mine.' },
+        { status: 404 },
+      )
+      const deletion = await bob.remove(hers.id, version, { status: 404 })
+      // Exactly what a Card that never existed gets.
+      const missing = {
+        code: 'not_found',
+        message: `No Card has the id "${hers.id}".`,
+      }
+      expect(edit.body).toEqual(missing)
+      expect(deletion.body).toEqual(missing)
+    }
+    expect((await alice.get(hers.id)).body).toEqual(hers)
+  })
+
+  it('never recreates a deleted Card from a stale edit', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1, 'Gone'))).body as Card
+    await account.remove(created.id, 1)
+    await account.edit(created.id, 1, { answer: 'Back?' }, { status: 404 })
+    await account.get(created.id, 404)
+    expect(await account.list()).toMatchObject({ total: 0 })
+    expect(await account.categories()).toEqual([])
+  })
+})
+
+describe('deleting a Card', () => {
+  it('deletes it permanently, and its Category with its last Card', async () => {
+    const account = newAccount()
+    const lone = (await account.create(card(1, 'Lone'))).body as Card
+    const kept = (await account.create(card(2))).body as Card
+    const { body, headers } = await account.remove(lone.id, 1)
+    expect(body).toBeUndefined()
+    expect(headers.get('Idempotent-Replayed')).toBeNull()
+    await account.get(lone.id, 404)
+    expect(await account.list()).toMatchObject({ items: [kept], total: 1 })
+    expect(await account.categories()).toEqual([{ ...kept.category, count: 1 }])
+    expect(await account.statistics()).toMatchObject({ total: 1 })
+    await account.remove(lone.id, 1, { status: 404 })
+  })
+
+  it('refuses a deletion confirmed against stale content', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    await account.edit(created.id, 1, { answer: 'Changed meanwhile.' })
+    const { body } = await account.remove(created.id, 1, { status: 409 })
+    expect(body).toMatchObject({ code: 'version_conflict' })
+    await account.remove(created.id, 2)
+  })
+
+  it('lets one of a racing edit and deletion win, never both', async () => {
+    for (let round = 0; round < 3; round++) {
+      const account = newAccount()
+      const created = (await account.create(card(1))).body as Card
+      const send = (method: string, body?: unknown) =>
+        worker.fetch(`/api/cards/${created.id}`, {
+          method,
+          headers: {
+            ...account.auth(),
+            'Content-Type': 'application/json',
+            [IDEMPOTENCY_KEY_HEADER]: newKey(),
+            [IF_MATCH_HEADER]: ifMatch(1),
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        })
+      const [edit, deletion] = await Promise.all([
+        send('PATCH', { answer: 'Edited.' }),
+        send('DELETE'),
+      ])
+      const statuses = [edit.status, deletion.status]
+      expect([
+        [200, 409],
+        [404, 204],
+      ]).toContainEqual(statuses)
+      const total = (await account.list()).total
+      expect(total).toBe(edit.status === 200 ? 1 : 0)
+    }
+  })
+})
+
+describe('retrying an edit or deletion', () => {
+  /** Sends a write and drops the response, as a lost connection would. */
+  const lose = (
+    account: ReturnType<typeof newAccount>,
+    method: 'PATCH' | 'DELETE',
+    cardId: string,
+    version: number,
+    key: string,
+    body?: unknown,
+  ) =>
+    worker.fetch(`/api/cards/${cardId}`, {
+      method,
+      headers: {
+        ...account.auth(),
+        'Content-Type': 'application/json',
+        [IDEMPOTENCY_KEY_HEADER]: key,
+        [IF_MATCH_HEADER]: ifMatch(version),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+
+  it('replays a lost edit once, even after later edits and deletion', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    const key = newKey()
+    await lose(account, 'PATCH', created.id, 1, key, { answer: 'First.' })
+
+    const replay = await account.edit(
+      created.id,
+      1,
+      { answer: 'First.' },
+      { key },
+    )
+    expect(replay.headers.get('Idempotent-Replayed')).toBe('true')
+    expect(replay.body).toMatchObject({ answer: 'First.', contentVersion: 2 })
+
+    await account.edit(created.id, 2, { answer: 'Second.' })
+    const later = await account.edit(
+      created.id,
+      1,
+      { answer: 'First.' },
+      { key },
+    )
+    expect(later.body).toEqual(replay.body)
+    expect((await account.get(created.id)).body).toMatchObject({
+      answer: 'Second.',
+      contentVersion: 3,
+    })
+
+    await account.remove(created.id, 3)
+    const afterDeletion = await account.edit(
+      created.id,
+      1,
+      { answer: 'First.' },
+      { key },
+    )
+    expect(afterDeletion.body).toEqual(replay.body)
+    await account.get(created.id, 404)
+  })
+
+  it('replays a lost deletion, without touching a later Card', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    const key = newKey()
+    await lose(account, 'DELETE', created.id, 1, key)
+    const replay = await account.remove(created.id, 1, { key })
+    expect(replay.headers.get('Idempotent-Replayed')).toBe('true')
+    await account.create(card(2))
+    expect(await account.list()).toMatchObject({ total: 1 })
+  })
+
+  it('applies an edit raced by its own retries once', async () => {
+    const account = newAccount()
+    const created = (await account.create(card(1))).body as Card
+    const key = newKey()
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        account.edit(created.id, 1, { answer: 'Once.' }, { key }),
+      ),
+    )
+    expect(
+      results.filter(({ headers }) => headers.get('Idempotent-Replayed')),
+    ).toHaveLength(5)
+    expect((await account.get(created.id)).body).toMatchObject({
+      contentVersion: 2,
+    })
+  })
+
+  it('refuses a key reused for another edit, Card or operation', async () => {
+    const account = newAccount()
+    const one = (await account.create(card(1))).body as Card
+    const two = (await account.create(card(2))).body as Card
+    const key = newKey()
+    await account.edit(one.id, 1, { answer: 'A.' }, { key })
+    await account.edit(one.id, 1, { answer: 'B.' }, { key, status: 422 })
+    await account.edit(two.id, 1, { answer: 'A.' }, { key, status: 422 })
+    // Keys are bound to their operation: the same key may delete.
+    await account.remove(two.id, 1, { key })
+    await account.remove(one.id, 2, { key, status: 422 })
+    expect((await account.get(one.id)).body).toMatchObject({ answer: 'A.' })
+  })
+
+  it('keeps keys to their account', async () => {
+    const alice = newAccount()
+    const bob = newAccount()
+    const hers = (await alice.create(card(1))).body as Card
+    const his = (await bob.create(card(1))).body as Card
+    const key = newKey()
+    await alice.edit(hers.id, 1, { answer: 'Hers.' }, { key })
+    const { headers } = await bob.edit(his.id, 1, { answer: 'Hers.' }, { key })
+    expect(headers.get('Idempotent-Replayed')).toBeNull()
+    // Bob replaying Alice's request finds only that her Card isn't his.
+    await bob.edit(
+      hers.id,
+      1,
+      { answer: 'Hers.' },
+      { key: newKey(), status: 404 },
+    )
+  })
+
+  it('forgets edit and deletion keys after 24 hours', async () => {
+    const db = database((await worker.env()).DB)
+    const owned = collection(db, `user_write_expiry_${crypto.randomUUID()}`)
+    const t0 = Date.now()
+    const created = await owned.createCard(card(1), newKey(), 'hash', t0)
+    if (created.kind !== 'created') throw new Error(created.kind)
+    const write = {
+      cardId: created.card.id,
+      contentVersion: 1,
+      key: 'edit-key-0123456789',
+      requestHash: 'edit',
+      now: t0,
+    }
+    expect(await owned.updateCard({ answer: 'One.' }, write)).toMatchObject({
+      kind: 'updated',
+    })
+    expect(
+      await owned.updateCard(
+        { answer: 'One.' },
+        { ...write, now: t0 + IDEMPOTENCY_TTL_MS - 1 },
+      ),
+    ).toMatchObject({ kind: 'replayed' })
+    // Expired: the key is a new edit, now stale.
+    expect(
+      await owned.updateCard(
+        { answer: 'One.' },
+        { ...write, now: t0 + IDEMPOTENCY_TTL_MS },
+      ),
+    ).toEqual({ kind: 'conflict' })
+
+    const deletion = {
+      ...write,
+      contentVersion: 2,
+      key: 'delete-key-0123456789',
+      requestHash: 'delete',
+    }
+    expect(await owned.deleteCard(deletion)).toEqual({ kind: 'deleted' })
+    expect(
+      await owned.deleteCard({ ...deletion, now: t0 + IDEMPOTENCY_TTL_MS - 1 }),
+    ).toEqual({ kind: 'replayed' })
+    expect(
+      await owned.deleteCard({ ...deletion, now: t0 + IDEMPOTENCY_TTL_MS }),
+    ).toEqual({ kind: 'not_found' })
   })
 })

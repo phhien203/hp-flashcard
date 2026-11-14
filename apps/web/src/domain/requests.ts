@@ -1,4 +1,10 @@
 import { BLANK_MESSAGES, CARD_TEXT_FIELDS, type CardText } from './card-text.js'
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  IDEMPOTENCY_KEY_MESSAGE,
+  IDEMPOTENCY_KEY_PATTERN,
+} from './idempotency.js'
+import { IF_MATCH_HEADER, IF_MATCH_MESSAGE, parseIfMatch } from './versions.js'
 
 /**
  * Reading API requests: the shape checks the mock backend and the Worker
@@ -136,4 +142,29 @@ export function parseCardBody(
   if (Object.keys(fieldErrors).length > 0)
     return { ok: false, error: 'The Card is invalid.', fieldErrors }
   return { ok: true, value: fields }
+}
+
+/** The headers of a Card write: its idempotency key and, for an existing Card, the version it was based on. */
+export interface WriteHeaders {
+  key: string
+  contentVersion: number
+}
+
+/**
+ * Reads `Idempotency-Key` and `If-Match` for an edit or deletion. Field
+ * errors are keyed by header name.
+ */
+export function parseVersionedWriteHeaders(
+  get: (name: string) => string | null | undefined,
+): Parsed<WriteHeaders> {
+  const fieldErrors: Record<string, string> = {}
+  const key = get(IDEMPOTENCY_KEY_HEADER)
+  if (!key || !IDEMPOTENCY_KEY_PATTERN.test(key))
+    fieldErrors[IDEMPOTENCY_KEY_HEADER] = IDEMPOTENCY_KEY_MESSAGE
+  const contentVersion = parseIfMatch(get(IF_MATCH_HEADER))
+  if (contentVersion === undefined)
+    fieldErrors[IF_MATCH_HEADER] = IF_MATCH_MESSAGE
+  if (!key || contentVersion === undefined || Object.keys(fieldErrors).length)
+    return { ok: false, error: 'The request headers are invalid.', fieldErrors }
+  return { ok: true, value: { key, contentVersion } }
 }
