@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 
 import { createMockAuth } from '../auth/mock-auth.js'
-import { CARD_QUOTA, MAX_LENGTHS } from '../domain/card-text.js'
+import { CARD_QUOTA, MAX_LENGTHS, type CardText } from '../domain/card-text.js'
 import {
   creationFingerprint,
   IDEMPOTENCY_KEY_HEADER,
@@ -11,7 +11,7 @@ import {
 import { worker } from '../mocks/browser.js'
 import { mockOwnerOf } from '../mocks/identity.js'
 import { serverError } from '../mocks/scenarios.js'
-import { mockBackend, mockStore, type CardFields } from '../mocks/store.js'
+import { mockBackend, mockStore } from '../mocks/store.js'
 import {
   cardTile,
   createCard,
@@ -217,7 +217,7 @@ describe('retrying a creation', () => {
         if (lost) return
         lost = true
         // The backend saves the Card, but the response never arrives.
-        const fields = (await request.json()) as CardFields
+        const fields = (await request.json()) as CardText
         mockBackend
           .collectionOf(mockOwnerOf(request)!)
           .createCardOnce(fields, keys[0]!, creationFingerprint(fields))

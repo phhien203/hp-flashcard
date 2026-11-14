@@ -14,7 +14,7 @@ import {
   IDEMPOTENCY_KEY_PATTERN,
   IDEMPOTENT_REPLAYED_HEADER,
 } from '../domain/idempotency.js'
-import { QUOTA_EXCEEDED_MESSAGE } from '../domain/card-text.js'
+import { QUOTA_EXCEEDED_MESSAGE, type CardText } from '../domain/card-text.js'
 import {
   parseCardBody,
   parseCardListQuery,
@@ -23,12 +23,7 @@ import {
 } from '../domain/requests.js'
 import { MASTERED } from '../domain/progress.js'
 import { mockOwnerOf } from './identity.js'
-import {
-  mockBackend,
-  type CardFields,
-  type MockStore,
-  type WriteResult,
-} from './store.js'
+import { mockBackend, type MockStore, type WriteResult } from './store.js'
 
 const error = (status: number, body: ApiErrorBody) =>
   HttpResponse.json(body, { status })
@@ -146,7 +141,7 @@ export const createHandlers = (origin = '') => [
         })
       }
       if (!body.ok) return invalid(body.error, body.fieldErrors)
-      const fields = body.value as CardFields
+      const fields = body.value as CardText
       const result = store.createCardOnce(
         fields,
         key,
