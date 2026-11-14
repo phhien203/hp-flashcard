@@ -7,7 +7,7 @@ import {
 } from 'msw'
 
 import type { ApiErrorBody } from '../api/types.js'
-import { notFound } from './handlers.js'
+import { notFound, rateLimited } from './handlers.js'
 import type { MockStore } from './store.js'
 
 /**
@@ -102,7 +102,45 @@ export const SCENARIOS = {
   'delete-conflict': (store: MockStore) => [
     editedElsewhereFirst('delete', store),
   ],
+  /**
+   * Before the first Progress save lands, another device saves the same
+   * Card's Progress (resetting it), so the save conflicts (409).
+   */
+  'progress-conflict': (store: MockStore) => {
+    let done = false
+    return [
+      http.put('/api/cards/:cardId/progress', ({ params }) => {
+        if (done) return
+        done = true
+        store.setProgress(String(params.cardId), ELSEWHERE_PROGRESS)
+      }),
+    ]
+  },
+  /**
+   * The first write of any kind is refused by the write rate limit (429,
+   * retry after 30 seconds) and does nothing; later ones work.
+   */
+  'rate-limited': () => {
+    let limited = false
+    const once = () => {
+      if (limited) return
+      limited = true
+      return rateLimited(RATE_LIMITED_SECONDS)
+    }
+    return [
+      http.post('/api/cards', once),
+      http.patch('/api/cards/:cardId', once),
+      http.delete('/api/cards/:cardId', once),
+      http.put('/api/cards/:cardId/progress', once),
+    ]
+  },
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
+
+/** What another device sets a Card's Progress to, in `progress-conflict`. */
+export const ELSEWHERE_PROGRESS = 0
+
+/** The `Retry-After` of `rate-limited`. */
+export const RATE_LIMITED_SECONDS = 30
 
 /** What another device changes a Card's answer to, in the conflict scenarios. */
 export const ELSEWHERE_ANSWER = 'Changed on another device.'

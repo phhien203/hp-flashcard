@@ -9,9 +9,9 @@ import { generateApiTypes, TYPES_URL } from '../../scripts/api-types.ts'
 import { CARD_QUOTA } from '../domain/card-text.js'
 import { IDEMPOTENCY_KEY_HEADER } from '../domain/idempotency.js'
 import { ifMatch, IF_MATCH_HEADER } from '../domain/versions.js'
-import { createHandlers } from '../mocks/handlers.js'
+import { createHandlers, rateLimited } from '../mocks/handlers.js'
 import { mockToken } from '../mocks/identity.js'
-import { serverError } from '../mocks/scenarios.js'
+import { RATE_LIMITED_SECONDS, serverError } from '../mocks/scenarios.js'
 import { MOCK_DEMO_USER, mockBackend, mockStore } from '../mocks/store.js'
 import { contractChecker, SPEC_PATH, type Method } from './contract-check.js'
 
@@ -42,6 +42,7 @@ describe('the OpenAPI document', () => {
       'GET /api/categories',
       'PATCH /api/cards/{cardId}',
       'POST /api/cards',
+      'POST /api/webhooks/clerk',
       'PUT /api/cards/{cardId}/progress',
     ])
   })
@@ -91,7 +92,14 @@ describe('the mock backend', () => {
                 mockStore.getCard(cardId)?.contentVersion ?? 1,
               ),
             }
-          : {}
+          : method === 'put'
+            ? {
+                [IDEMPOTENCY_KEY_HEADER]: newKey(),
+                [IF_MATCH_HEADER]: ifMatch(
+                  mockStore.getCard(cardId)?.progressVersion ?? 1,
+                ),
+              }
+            : {}
     const { body } = await check(method, pathTemplate, path, status, {
       body: requestBody,
       headers: { ...bearer(MOCK_DEMO_USER), ...key },
@@ -428,7 +436,7 @@ describe('the mock backend', () => {
     it("sets a Card's Progress, keeping its content, Category and place", async () => {
       const before = mockStore.getCard('card-02')
       const card = await setProgress('card-02', { progress: 5 }, 200)
-      expect(card).toEqual({ ...before, progress: 5 })
+      expect(card).toEqual({ ...before, progress: 5, progressVersion: 2 })
       const page = await expectConforms(
         'get',
         '/api/cards',
@@ -440,18 +448,75 @@ describe('the mock backend', () => {
       })
     })
 
-    it('resets to 0, and repeating a request changes nothing more', async () => {
-      for (const progress of [0, 0]) {
-        const card = await setProgress('card-01', { progress }, 200)
-        expect(card).toMatchObject({ id: 'card-01', progress: 0 })
-      }
-      for (const progress of [3, 3]) {
-        const card = await setProgress('card-01', { progress }, 200)
-        expect(card).toMatchObject({ progress: 3 })
-      }
+    it('resets to 0, advancing the Progress version each time', async () => {
+      const card = await setProgress('card-01', { progress: 0 }, 200)
+      expect(card).toMatchObject({
+        id: 'card-01',
+        progress: 0,
+        contentVersion: 1,
+        progressVersion: 2,
+      })
+      await expect(
+        setProgress('card-01', { progress: 3 }, 200),
+      ).resolves.toMatchObject({ progress: 3, progressVersion: 3 })
       await expect(
         expectConforms('get', '/api/cards/{cardId}', '/api/cards/card-01', 200),
       ).resolves.toMatchObject({ progress: 3 })
+    })
+
+    /** Saves card-02's Progress with these headers, unchecked by the store. */
+    const save = (
+      progress: number,
+      { key, version }: { key: string; version: number },
+      status: number,
+    ) =>
+      check(
+        'put',
+        '/api/cards/{cardId}/progress',
+        '/api/cards/card-02/progress',
+        status,
+        {
+          body: { progress },
+          headers: {
+            ...bearer(MOCK_DEMO_USER),
+            [IDEMPOTENCY_KEY_HEADER]: key,
+            [IF_MATCH_HEADER]: ifMatch(version),
+          },
+        },
+      )
+
+    it('refuses a save based on an older Progress version with 409', async () => {
+      mockStore.setProgress('card-02', 1) // Another device.
+      const { body } = await save(5, { key: newKey(), version: 1 }, 409)
+      expect(body).toMatchObject({ code: 'version_conflict' })
+      expect(mockStore.getCard('card-02')).toMatchObject({ progress: 1 })
+    })
+
+    it('replays a retried save without applying it again, and refuses a reused key', async () => {
+      const key = newKey()
+      const first = await save(5, { key, version: 1 }, 200)
+      mockStore.setProgress('card-02', 0)
+      const replay = await save(5, { key, version: 1 }, 200)
+      expect(replay.headers.get('Idempotent-Replayed')).toBe('true')
+      expect(replay.body).toEqual(first.body)
+      expect(mockStore.getCard('card-02')).toMatchObject({ progress: 0 })
+      await save(4, { key, version: 1 }, 422)
+    })
+
+    it('requires the idempotency key and Progress version headers', async () => {
+      const { body } = await check(
+        'put',
+        '/api/cards/{cardId}/progress',
+        '/api/cards/card-02/progress',
+        400,
+        { body: { progress: 5 }, headers: bearer(MOCK_DEMO_USER) },
+      )
+      expect(body).toMatchObject({
+        fieldErrors: {
+          [IDEMPOTENCY_KEY_HEADER]: expect.any(String),
+          [IF_MATCH_HEADER]: expect.stringContaining('progressVersion'),
+        },
+      })
     })
 
     it.for([
@@ -481,6 +546,22 @@ describe('the mock backend', () => {
     it('answers 404 for an unknown Card', async () => {
       const error = await setProgress('nope', { progress: 1 }, 404)
       expect(error).toMatchObject({ code: 'not_found' })
+    })
+
+    // The response the development `rate-limited` scenario sends.
+    it('answers 429 with Retry-After when the account writes too often', async () => {
+      server.use(
+        http.put(`${ORIGIN}/api/cards/:cardId/progress`, () =>
+          rateLimited(RATE_LIMITED_SECONDS),
+        ),
+      )
+      const { body, headers } = await save(
+        5,
+        { key: newKey(), version: 1 },
+        429,
+      )
+      expect(body).toMatchObject({ code: 'rate_limited' })
+      expect(headers.get('Retry-After')).toBe(String(RATE_LIMITED_SECONDS))
     })
 
     // The body the development `progress-error` scenario sends.

@@ -31,8 +31,9 @@ Credentials and accounts can't be created from this repository. Nothing here is 
 1. Create an application; its development instance is the local one.
 2. **User & authentication → Email:** enable sign-in with email and **email verification code** (one-time code). Turn passwords off.
 3. **Restrictions:** keep sign-up **public** (open registration).
-4. **User & authentication → Account deletion** (or **Settings → Restrictions**, depending on the dashboard version): **disable** "Allow users to delete their accounts". The app also shows no profile or account-management UI.
+4. **User & authentication → Account deletion** (or **Settings → Restrictions**, depending on the dashboard version): **disable** "Allow users to delete their accounts". The app also shows no profile or account-management UI. `worker/clerk.integration.test.ts` checks this setting (a new user's `delete_self_enabled` must be false).
 5. **API keys:** copy the publishable key (`pk_test_…`) to `VITE_CLERK_PUBLISHABLE_KEY`, and the **JWT public key (PEM)** to `CLERK_JWT_KEY` (or the secret key, `sk_test_…`, to `CLERK_SECRET_KEY`).
+6. **Webhooks:** add an endpoint for `https://<the Worker's origin>/api/webhooks/clerk`, subscribed to **`user.deleted`** only, and copy its signing secret (`whsec_…`) to `CLERK_WEBHOOK_SIGNING_SECRET`. A local Worker isn't reachable from Clerk; use a tunnel, or Clerk's "Testing" tab against a deployed one.
 
 **Clerk (production instance)**, when the deployment slice ships: the same settings, plus the `flashcard.hien.page` domain; its keys go only into Cloudflare secrets, never into local files.
 
@@ -58,13 +59,33 @@ The Worker tests exercise these with concurrent requests on a real local D1.
 
 ### Versions and conflicts
 
-Every Card has a `contentVersion` (1 at creation, one more per edit). `PATCH` and `DELETE /api/cards/{id}` name the version they were based on in `If-Match: "<version>"`. If the Card has changed since, they answer `409 version_conflict` and change nothing. The app then shows the latest version: the edit dialog shows it beside the unsaved changes, to keep them (and save over it) or take the latest; the delete confirmation shows it and asks again. Progress, in the next slice, gets its own version, so studying won't conflict with an edit.
+Every Card has a `contentVersion` (1 at creation, one more per edit) and a separate `progressVersion` (1 at creation, one more per Progress save). `PATCH` and `DELETE /api/cards/{id}` name the content version they were based on in `If-Match: "<version>"`; `PUT /api/cards/{id}/progress` names the Progress version. If that version has moved on, they answer `409 version_conflict` and change nothing. Each write checks and advances only its own version, in the same batch that records its idempotency key, so studying never makes an edit or a deletion stale, and an edit never makes a Progress save stale. A Progress save is an `UPDATE`, never an insert: one for a deleted Card answers `404` and brings nothing back.
+
+The app then shows the latest version: the edit dialog shows it beside the unsaved changes, to keep them (and save over it) or take the latest; the delete confirmation shows it and asks again; Study Mode shows the Card's latest Progress and says another device changed it, and the next "I Know This" counts from there.
 
 ### Retrying a write
 
-Creating, editing and deleting require an `Idempotency-Key`. The app sends one per intended write and repeats it when the user retries after a failure, until what is sent changes or the write succeeds. For 24 hours, the same key and request answer the original result again (`Idempotent-Replayed: true`) without applying it twice or using quota, even after later edits or the Card's deletion; a different request answers `422`. Keys belong to their account and operation. After 24 hours a record expires and its key writes anew; writes forget their owner's expired records, and a daily cron (`wrangler.jsonc`) deletes all expired ones.
+Creating, editing, deleting and saving Progress require an `Idempotency-Key`. The app sends one per intended write and repeats it when the user retries after a failure, until what is sent changes or the write succeeds. For 24 hours, the same key and request answer the original result again (`Idempotent-Replayed: true`) without applying it twice or using quota, even after later edits or the Card's deletion; a different request answers `422`. Keys belong to their account and operation. After 24 hours a record expires and its key writes anew; writes forget their owner's expired records, and a daily cron (`wrangler.jsonc`) deletes all expired ones.
 
 A replayed result describes the Card as it was then. The app never stores it in its cache; it refetches instead, so a replay can't show older content over newer.
+
+### Write rate limit and request bounds
+
+Each account may make 60 write requests in any 60 seconds (ADR 0002), a sliding window kept in D1 (`write_requests`, `worker/rate-limit.ts`): one batch forgets the account's entries older than a minute and inserts this request's only if fewer than 60 remain, in one statement. D1 runs one write at a time, so every Worker instance counts the same requests and racing requests never get past 60; no instance keeps a counter of its own. Every write request that gets past authentication counts, whatever it answers, retries included. The 61st answers `429 rate_limited` with `Retry-After` (seconds until the oldest entry leaves the window), does nothing and isn't counted, so waiting and sending it again with the same idempotency key is safe. The app says how long to wait, beside the form or in Study Mode, and Retry repeats the same key.
+
+The order of checks is: session (`401`), then the rate limit (`429`), then the body, which is read only up to 128 KiB (`413 payload_too_large`). Nothing is read or written for a request that fails one.
+
+### Deleted identities
+
+People can't delete their own accounts (Clerk setting above). When an administrator deletes one in Clerk, Clerk sends `user.deleted` to `POST /api/webhooks/clerk` (`worker/webhook.ts`). The Worker verifies its Standard Webhooks signature over the original body with `CLERK_WEBHOOK_SIGNING_SECRET` (Clerk's `verifyWebhook`, which also refuses timestamps more than five minutes off), then, in one batch: records the delivery id, records the identity in `deleted_identities`, and deletes its Cards, Categories, idempotency records (expired or not) and rate-limit entries. It answers `200` only after that commits; any failure answers `500` and Clerk delivers again. A repeated delivery id is acknowledged without being applied again; another delivery of the same deletion finds nothing to delete.
+
+A Clerk session token stays valid until it expires (about a minute) after its user is deleted, so the Worker can't rely on Clerk alone. Every request checks `deleted_identities` after verifying the token and answers `401`. A request that passed that check before the purge committed is stopped in the database: triggers (`migrations/0003_deleted_identity_guards.sql`) refuse any insert for a deleted identity, rolling back its whole batch, and the Worker answers `401`. Updates and deletions find no rows. Clerk never reuses a user id, so the tombstones stay.
+
+Restoring D1 (ADR 0005) can bring back both a purged Collection and its tombstone's absence; reconciling deleted identities after a restore is the recovery slice's work.
+
+### Logs
+
+`wrangler.jsonc` enables Workers Logs and Issues for every request; the Worker logs its own JSON records (`worker/log.ts`): one per API request with a request id (also sent as `X-Request-Id`), method, route pattern (`/api/cards/:cardId`, never the URL), status and latency; `api_error` with the error's class name for unexpected failures; and webhook outcomes by event type. Never Card text, emails, tokens, identities, request bodies or exception messages, which can quote stored values. Cloudflare's automatic invocation logs and traces are off for the same reason. `worker/logging.test.ts` checks this across validation, authentication, webhook and unexpected-error paths.
 
 ### Sessions, connectivity and caching
 
@@ -89,22 +110,24 @@ A replayed result describes the Card as it was then. The app never stores it in 
 
 In mock mode, add `?scenario=` to the page URL to see the app's other states. Combine scenarios with commas, e.g. `?scenario=slow,page-error`. They aren't part of the API contract.
 
-| Scenario           | Effect                                          |
-| ------------------ | ----------------------------------------------- |
-| `slow`             | Every Card listing takes 1.5 s                  |
-| `empty`            | The backend starts with no Cards                |
-| `initial-error`    | The first request for the first page fails      |
-| `page-error`       | The first request for a later page fails        |
-| `categories-error` | The first Category listing fails                |
-| `slow-writes`      | Every Card write takes 1.5 s                    |
-| `create-error`     | The first Card creation fails                   |
-| `edit-error`       | The first Card edit fails                       |
-| `edit-not-found`   | The first Card edit finds no such Card          |
-| `delete-error`     | The first Card deletion fails                   |
-| `delete-not-found` | The first Card deletion finds it gone           |
-| `edit-conflict`    | Another device edits the Card first             |
-| `delete-conflict`  | Another device edits the Card before a deletion |
-| `progress-error`   | The first Progress save fails                   |
+| Scenario            | Effect                                          |
+| ------------------- | ----------------------------------------------- |
+| `slow`              | Every Card listing takes 1.5 s                  |
+| `empty`             | The backend starts with no Cards                |
+| `initial-error`     | The first request for the first page fails      |
+| `page-error`        | The first request for a later page fails        |
+| `categories-error`  | The first Category listing fails                |
+| `slow-writes`       | Every Card write takes 1.5 s                    |
+| `create-error`      | The first Card creation fails                   |
+| `edit-error`        | The first Card edit fails                       |
+| `edit-not-found`    | The first Card edit finds no such Card          |
+| `delete-error`      | The first Card deletion fails                   |
+| `delete-not-found`  | The first Card deletion finds it gone           |
+| `edit-conflict`     | Another device edits the Card first             |
+| `delete-conflict`   | Another device edits the Card before a deletion |
+| `progress-error`    | The first Progress save fails                   |
+| `progress-conflict` | Another device saves the Card's Progress first  |
+| `rate-limited`      | The first write gets `429`, retry after 30 s    |
 
 ## Tests
 
@@ -112,6 +135,6 @@ In mock mode, add `?scenario=` to the page URL to see the app's other states. Co
 
 - `web` runs the assembled app in a real browser (UI → TanStack Query → fetch → MSW service worker) on the mock sign-in, with axe, keyboard and responsive checks.
 - `web:contract` runs in Node: it validates the OpenAPI document, checks the generated types are fresh, and validates mock responses against the schemas.
-- `web:worker` runs the Worker at its HTTP seam, through Wrangler's test harness: `wrangler.jsonc`, workerd, a local D1 built by the checked-in migrations. Session tokens are signed by a test key the Worker is given as `CLERK_JWT_KEY`, and verified by Clerk's own code; there is no test bypass. Responses are validated against the OpenAPI document.
+- `web:worker` runs the Worker at its HTTP seam, through Wrangler's test harness: `wrangler.jsonc`, workerd, a local D1 built by the checked-in migrations. Session tokens are signed by a test key the Worker is given as `CLERK_JWT_KEY`, and verified by Clerk's own code; webhook deliveries are signed with a test secret given as `CLERK_WEBHOOK_SIGNING_SECRET`, and verified by Clerk's `verifyWebhook`. There is no test bypass. Responses are validated against the OpenAPI document. `progress.test.ts`, `lifecycle.test.ts`, `rate-limit.test.ts` and `logging.test.ts` cover Progress versions and retries, the deletion webhook and purge races, the rate window, and log contents.
 
-`worker/clerk.integration.test.ts` is the one check against a real Clerk development instance. It runs only with `CLERK_SECRET_KEY=sk_test_…` set, creates a test user (a `+clerk_test` address, so no email is sent), and deletes it afterwards.
+`worker/clerk.integration.test.ts` holds the checks against a real Clerk development instance: a real session token through the Worker, a create/reload/study/edit/delete journey ending in an administrator deletion, and the configuration check that users can't delete themselves. It runs only with `CLERK_SECRET_KEY=sk_test_…` set, creates test users (`+clerk_test` addresses, so no email is sent), and deletes them afterwards.

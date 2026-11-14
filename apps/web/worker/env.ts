@@ -12,4 +12,10 @@ export interface Env {
    * comma-separated, e.g. `http://localhost:5173`. Required.
    */
   CLERK_AUTHORIZED_PARTIES?: string
+  /**
+   * The signing secret (`whsec_…`) of the Clerk webhook endpoint that
+   * delivers `user.deleted` to `/api/webhooks/clerk`. Without it, every
+   * delivery is refused (and Clerk retries).
+   */
+  CLERK_WEBHOOK_SIGNING_SECRET?: string
 }

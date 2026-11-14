@@ -15,16 +15,17 @@ import {
   IDEMPOTENCY_KEY_MESSAGE,
   IDEMPOTENCY_KEY_PATTERN,
   IDEMPOTENT_REPLAYED_HEADER,
+  progressFingerprint,
 } from '../domain/idempotency.js'
 import { QUOTA_EXCEEDED_MESSAGE, type CardText } from '../domain/card-text.js'
+import { RETRY_AFTER_HEADER, rateLimitedMessage } from '../domain/rate-limit.js'
 import {
   parseCardBody,
   parseCardListQuery,
   parseCategoryFilter,
+  parseProgressBody,
   parseVersionedWriteHeaders,
-  type Parsed,
 } from '../domain/requests.js'
-import { MASTERED } from '../domain/progress.js'
 import { mockOwnerOf } from './identity.js'
 import {
   mockBackend,
@@ -79,6 +80,27 @@ export const versionConflict = () =>
       'This Card has changed since that version. Fetch it again to review it.',
   })
 
+/** The backend's answer when a Card's Progress has moved on since the version a save names. */
+export const progressConflict = () =>
+  error(409, {
+    code: 'version_conflict',
+    message:
+      'This Card’s Progress has changed since that version. Fetch it again to review it.',
+  })
+
+/** The backend's answer when the account has written too often. */
+export const rateLimited = (retryAfterSeconds: number) =>
+  HttpResponse.json<ApiErrorBody>(
+    {
+      code: 'rate_limited',
+      message: rateLimitedMessage(retryAfterSeconds),
+    },
+    {
+      status: 429,
+      headers: { [RETRY_AFTER_HEADER]: String(retryAfterSeconds) },
+    },
+  )
+
 /** The backend's answer when no Card has this id. */
 export const notFound = (cardId: string) =>
   error(404, { code: 'not_found', message: `No Card has the id "${cardId}".` })
@@ -104,10 +126,11 @@ function writeResponse(result: WriteResult, cardId: string, status = 200) {
   return invalid('The Card is invalid.', result.fieldErrors)
 }
 
-/** Answers an edit or deletion the store refused. */
+/** Answers an edit, deletion or Progress save the store refused. */
 function refused(
   result: Exclude<VersionedOutcome<unknown>, { ok: true }>,
   cardId: string,
+  conflict = versionConflict,
 ) {
   switch (result.reason) {
     case 'invalid':
@@ -115,36 +138,10 @@ function refused(
     case 'not_found':
       return notFound(cardId)
     case 'conflict':
-      return versionConflict()
+      return conflict()
     case 'key_reused':
       return keyReused()
   }
-}
-
-/** Reads a `ProgressInput` body: `{ progress }`, a whole number from 0 to 5. */
-async function readProgressBody(request: Request): Promise<Parsed<number>> {
-  const body: unknown = await request.json().catch(() => undefined)
-  if (typeof body !== 'object' || body === null || Array.isArray(body))
-    return {
-      ok: false,
-      error: 'The body must be a JSON object.',
-      fieldErrors: {},
-    }
-  const fieldErrors: Record<string, string> = {}
-  for (const name of Object.keys(body)) {
-    if (name !== 'progress') fieldErrors[name] = 'Unknown field.'
-  }
-  const { progress } = body as { progress?: unknown }
-  if (
-    typeof progress !== 'number' ||
-    !Number.isInteger(progress) ||
-    progress < 0 ||
-    progress > MASTERED
-  )
-    fieldErrors.progress = `Must be a whole number from 0 to ${MASTERED}.`
-  if (Object.keys(fieldErrors).length > 0)
-    return { ok: false, error: 'The Progress is invalid.', fieldErrors }
-  return { ok: true, value: progress as number }
 }
 
 /**
@@ -223,7 +220,7 @@ export const createHandlers = (origin = '') => [
           ...headers.fieldErrors,
         })
       if (!body.ok) return invalid(body.error, body.fieldErrors)
-      const { key, contentVersion } = headers.value
+      const { key, version: contentVersion } = headers.value
       const result = store.updateCardOnce(cardId, body.value, {
         contentVersion,
         key,
@@ -242,12 +239,32 @@ export const createHandlers = (origin = '') => [
   http.put<{ cardId: string }>(
     `${origin}/api/cards/:cardId/progress`,
     owned(async ({ params, request }, store) => {
-      if (!store.getCard(params.cardId)) return notFound(params.cardId)
-      const body = await readProgressBody(request)
+      const { cardId } = params
+      const headers = parseVersionedWriteHeaders(
+        (name) => request.headers.get(name),
+        'progressVersion',
+      )
+      const body = parseProgressBody(
+        await request.json().catch(() => undefined),
+      )
+      if (!headers.ok)
+        return invalid(headers.error, {
+          ...(body.ok ? {} : body.fieldErrors),
+          ...headers.fieldErrors,
+        })
       if (!body.ok) return invalid(body.error, body.fieldErrors)
-      const card = store.setProgress(params.cardId, body.value)
-      if (!card) return notFound(params.cardId)
-      return HttpResponse.json<Card>(card)
+      const { key, version: progressVersion } = headers.value
+      const result = store.setProgressOnce(cardId, body.value, {
+        progressVersion,
+        key,
+        fingerprint: progressFingerprint(cardId, progressVersion, body.value),
+      })
+      if (!result.ok) return refused(result, cardId, progressConflict)
+      return HttpResponse.json<Card>(result.value, {
+        headers: result.replayed
+          ? { [IDEMPOTENT_REPLAYED_HEADER]: 'true' }
+          : undefined,
+      })
     }),
   ),
 
@@ -259,7 +276,7 @@ export const createHandlers = (origin = '') => [
         request.headers.get(name),
       )
       if (!headers.ok) return invalid(headers.error, headers.fieldErrors)
-      const { key, contentVersion } = headers.value
+      const { key, version: contentVersion } = headers.value
       const result = store.deleteCardOnce(cardId, {
         contentVersion,
         key,

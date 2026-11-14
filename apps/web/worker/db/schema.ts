@@ -97,3 +97,45 @@ export const idempotencyRecords = sqliteTable(
     index('idempotency_records_expires_at_idx').on(t.expiresAt),
   ],
 )
+
+/**
+ * Identities an administrator deleted in Clerk (ADR 0002), kept for good:
+ * Clerk never reuses a user id. Triggers (migrations/0003) refuse any row
+ * for an owner listed here, so a request already in flight when the purge
+ * commits can't bring a Collection back.
+ */
+export const deletedIdentities = sqliteTable('deleted_identities', {
+  ownerId: text('owner_id').primaryKey(),
+  deletedAt: integer('deleted_at').notNull(),
+})
+
+/**
+ * Clerk webhook deliveries already processed, by their `svix-id`, so a
+ * repeated delivery is acknowledged without being applied again.
+ */
+export const webhookDeliveries = sqliteTable(
+  'webhook_deliveries',
+  {
+    id: text('id').primaryKey(),
+    /** The event type, e.g. `user.deleted`. */
+    type: text('type').notNull(),
+    processedAt: integer('processed_at').notNull(),
+  },
+  (t) => [index('webhook_deliveries_processed_at_idx').on(t.processedAt)],
+)
+
+/**
+ * Each owner's accepted write requests of the last minute: the sliding
+ * window the write rate limit counts (src/domain/rate-limit.ts). One table
+ * in D1, which runs one write at a time, so every Worker instance counts
+ * the same requests.
+ */
+export const writeRequests = sqliteTable(
+  'write_requests',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ownerId: text('owner_id').notNull(),
+    at: integer('at').notNull(),
+  },
+  (t) => [index('write_requests_owner_at_idx').on(t.ownerId, t.at)],
+)

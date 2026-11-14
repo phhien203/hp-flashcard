@@ -10,6 +10,7 @@ import {
 import {
   ApiError,
   type ApiClient,
+  type ProgressWrite,
   type VersionedWrite,
   type WriteResult,
 } from '../api/client.js'
@@ -238,25 +239,42 @@ export function useUpdateCard() {
 }
 
 /**
- * Sets a Card's Progress: one more for "I Know This", 0 to reset. The value
- * is absolute, so retrying a failed save never credits twice. Nothing
- * changes on screen until the backend agrees and the listings and
- * statistics have refetched.
+ * Sets a Card's Progress, if it is still at the `progressVersion` the save
+ * was based on: one more for "I Know This", 0 to reset. A retry of the same
+ * intended save repeats its `idempotencyKey`, so it never credits twice.
+ * Nothing changes on screen until the backend agrees and the listings and
+ * statistics have refetched. A conflict (another device saved Progress
+ * first) or a Card found gone refetches the Collection, to show it as it
+ * is now.
  */
 export function useSetProgress() {
   const queryClient = useQueryClient()
   const api = useApi()
   return useMutation({
-    mutationFn: ({ cardId, progress }: { cardId: string; progress: number }) =>
-      api.setCardProgress(cardId, progress),
-    onSuccess: (card) =>
-      afterWrite(queryClient, { value: card, replayed: false }),
+    mutationFn: ({
+      cardId,
+      progress,
+      write,
+    }: {
+      cardId: string
+      progress: number
+      write: ProgressWrite
+    }) => api.setCardProgress(cardId, progress, write),
+    onSuccess: (result) => afterWrite(queryClient, result),
+    onError: async (error) => {
+      if (isConflict(error) || isNotFound(error))
+        await refetchCollection(queryClient)
+    },
   })
 }
 
 /** Whether a failed write found no such Card: it was already deleted. */
 export const isNotFound = (error: unknown) =>
   error instanceof ApiError && error.status === 404
+
+/** Whether a write was refused by the write rate limit (`429`). */
+export const isRateLimited = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 429
 
 /** Whether a failed write found the Card changed since its version. */
 export const isConflict = (error: unknown) =>

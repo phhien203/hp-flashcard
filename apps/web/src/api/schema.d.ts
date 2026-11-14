@@ -140,11 +140,24 @@ export interface paths {
         get?: never;
         /**
          * Set a Card's Progress
-         * @description Sets the Card's Progress to the given value: one more to credit an
-         *     "I Know This", 0 to reset it. The value is absolute, so repeating
-         *     the request changes nothing more. The Card keeps its identifier,
-         *     content, Category and place in the default order. A `400` names
-         *     each rejected field in `fieldErrors`.
+         * @description Sets the Card's Progress to the given value, if its Progress is
+         *     still at the `progressVersion` named in `If-Match`, and advances its
+         *     `progressVersion`: one more to credit an "I Know This" (at most 5),
+         *     0 to reset it. The value is absolute. The Card keeps its identifier,
+         *     content, `contentVersion`, Category and place in the default order.
+         *     A `400` names each rejected field in `fieldErrors`.
+         *
+         *     If the Card's Progress has been saved since (another device, say),
+         *     the save answers `409` with `version_conflict` and changes nothing:
+         *     of two saves based on the same version, at most one succeeds. A
+         *     content edit doesn't make a Progress save stale. A Card that
+         *     doesn't exist, or isn't yours, answers `404`; a save never
+         *     recreates a deleted Card.
+         *
+         *     Retrying with the same `Idempotency-Key` and request answers the
+         *     original `200` again (`Idempotent-Replayed: true`) for 24 hours,
+         *     even after later saves, edits or the Card's deletion. That Card is
+         *     as it was then: refetch rather than display it over newer data.
          */
         put: operations["setCardProgress"];
         post?: never;
@@ -175,6 +188,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks/clerk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive a Clerk event
+         * @description Clerk's webhook endpoint, not for the app. Authenticated by its
+         *     Standard Webhooks (Svix) signature over the original body, not a
+         *     session: `svix-id`, `svix-timestamp` and `svix-signature`. A missing,
+         *     forged or altered signature, or a timestamp more than five minutes
+         *     off, answers `400` and changes nothing.
+         *
+         *     `user.deleted` (an administrator deleted the account) deletes the
+         *     account's whole Collection for good and refuses every later
+         *     request for it. Other events are acknowledged and ignored. A
+         *     delivery repeated with the same `svix-id` is acknowledged without
+         *     being applied again. `200` means the event's effect has committed;
+         *     anything else, and Clerk delivers it again.
+         */
+        post: operations["receiveClerkWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -190,6 +234,11 @@ export interface components {
          *     1 when created, one more after each edit. Progress changes leave it.
          */
         ContentVersion: number;
+        /**
+         * @description The version of a Card's Progress: 1 when created, one more after
+         *     each Progress save. Content edits leave it.
+         */
+        ProgressVersion: number;
         /** @description Study Progress; 5 means Mastered. */
         Progress: number;
         CategoryRef: {
@@ -203,6 +252,7 @@ export interface components {
             category: components["schemas"]["CategoryRef"];
             progress: components["schemas"]["Progress"];
             contentVersion: components["schemas"]["ContentVersion"];
+            progressVersion: components["schemas"]["ProgressVersion"];
         };
         CardPage: {
             items: components["schemas"]["Card"][];
@@ -260,12 +310,24 @@ export interface components {
         };
         Error: {
             /** @enum {string} */
-            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "version_conflict" | "server_error" | "not_implemented";
+            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "version_conflict" | "server_error" | "rate_limited" | "payload_too_large" | "invalid_signature";
             message: string;
             /** @description Messages keyed by body field or query parameter name. */
             fieldErrors?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * @description A Clerk webhook event, e.g. `user.deleted`, whose `data.id` is the
+         *     deleted user's id.
+         */
+        ClerkEvent: {
+            type: string;
+            data: Record<string, never>;
+        };
+        WebhookReceipt: {
+            /** @enum {boolean} */
+            received: true;
         };
     };
     responses: {
@@ -289,7 +351,8 @@ export interface components {
         };
         /**
          * @description The request has no session token, or one that is expired, malformed
-         *     or otherwise invalid. Sign in again.
+         *     or otherwise invalid, or its account has been deleted. Sign in
+         *     again.
          */
         Unauthorized: {
             headers: {
@@ -329,8 +392,32 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description This backend does not support the operation yet. */
-        NotImplemented: {
+        /** @description The request body is larger than 128 KiB; nothing was read. */
+        PayloadTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description This account has made 60 write requests in the last 60 seconds.
+         *     Nothing was done, and this request doesn't count. Wait
+         *     `Retry-After` seconds, then send it again.
+         */
+        RateLimited: {
+            headers: {
+                /** @description Whole seconds until the account may write again. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The webhook's signature is missing, invalid or too old. */
+        InvalidSignature: {
             headers: {
                 [name: string]: unknown;
             };
@@ -361,6 +448,11 @@ export interface components {
          *     entity tag: `"3"`.
          */
         IfMatch: string;
+        /**
+         * @description The Card's `progressVersion` this save is based on, as a quoted
+         *     entity tag: `"3"`.
+         */
+        IfMatchProgress: string;
     };
     requestBodies: never;
     headers: {
@@ -448,7 +540,9 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["QuotaExceeded"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["IdempotencyKeyReused"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
         };
     };
@@ -543,7 +637,9 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["VersionConflict"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["IdempotencyKeyReused"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
         };
     };
@@ -589,14 +685,29 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["VersionConflict"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["IdempotencyKeyReused"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
         };
     };
     setCardProgress: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Identifies this intended write across retries: 16 to 128 letters,
+                 *     digits, `-` or `_`, such as a UUID. Send a fresh key for each write
+                 *     you mean to make, and the same key when retrying it. Keys are scoped
+                 *     to your account and the operation.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description The Card's `progressVersion` this save is based on, as a quoted
+                 *     entity tag: `"3"`.
+                 */
+                "If-Match": components["parameters"]["IfMatchProgress"];
+            };
             path: {
                 cardId: components["schemas"]["CardId"];
             };
@@ -608,9 +719,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The updated Card. */
+            /** @description The updated Card, or the one this key updated before. */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -620,8 +732,11 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["IdempotencyKeyReused"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
-            501: components["responses"]["NotImplemented"];
         };
     };
     listCategories: {
@@ -643,6 +758,37 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    receiveClerkWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "svix-id": string;
+                "svix-timestamp": string;
+                "svix-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClerkEvent"];
+            };
+        };
+        responses: {
+            /** @description The event was processed, now or before. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookReceipt"];
+                };
+            };
+            400: components["responses"]["InvalidSignature"];
+            413: components["responses"]["PayloadTooLarge"];
             500: components["responses"]["ServerError"];
         };
     };

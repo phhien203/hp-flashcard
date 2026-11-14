@@ -9,6 +9,7 @@ import {
 import { useState } from 'react'
 
 import { ApiError } from '../api/client.js'
+import { rateLimitedMessage } from '../domain/rate-limit.js'
 import type { Card, CardInput } from '../api/types.js'
 import {
   BLANK_MESSAGES,
@@ -94,10 +95,10 @@ export function saveErrorOf(error: unknown): {
         message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
       }
     }
-    if (error.status === 501) {
+    if (error.status === 429) {
       return {
         fieldErrors: {},
-        message: 'Saving this change isn’t available yet.',
+        message: rateLimitedMessage(error.retryAfter),
       }
     }
   }

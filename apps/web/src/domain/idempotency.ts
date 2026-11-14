@@ -27,6 +27,7 @@ export const OPERATIONS = {
   create: 'createCard',
   update: 'updateCard',
   delete: 'deleteCard',
+  progress: 'setCardProgress',
 } as const
 
 /**
@@ -56,3 +57,13 @@ export const editFingerprint = (
 /** What identifies a deletion request for its key. */
 export const deletionFingerprint = (cardId: string, contentVersion: number) =>
   JSON.stringify([cardId, contentVersion])
+
+/**
+ * What identifies a Progress save for its key: the Card, the
+ * `progressVersion` it was based on and the Progress it sets.
+ */
+export const progressFingerprint = (
+  cardId: string,
+  progressVersion: number,
+  progress: number,
+) => JSON.stringify([cardId, progressVersion, progress])

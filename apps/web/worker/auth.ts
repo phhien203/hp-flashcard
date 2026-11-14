@@ -1,8 +1,10 @@
 import { verifyToken } from '@clerk/backend'
 import { createMiddleware } from 'hono/factory'
 
+import { database } from './collection.js'
 import type { Env } from './env.js'
 import { apiError } from './errors.js'
+import { lifecycle } from './lifecycle.js'
 
 export interface AuthVariables {
   /** The verified session's Clerk user id: the owner of everything touched. */
@@ -13,8 +15,9 @@ export interface AuthVariables {
  * Admits only requests with a valid Clerk session token as their bearer
  * token, and records its subject as the owner. Anything else (no token,
  * or one that is malformed, expired, not yet valid, wrongly signed or
- * issued for another origin) gets 401 before any data is read. There is no
- * other way in: no test identities, no bypass.
+ * issued for another origin) gets 401 before any data is read, as does the
+ * session of an identity an administrator deleted. There is no other way
+ * in: no test identities, no bypass.
  */
 export const requireSession = createMiddleware<{
   Bindings: Env
@@ -45,6 +48,10 @@ export const requireSession = createMiddleware<{
         .catch(() => undefined)
     : undefined
   if (typeof subject !== 'string' || !subject)
+    return apiError(c, 401, 'unauthorized', 'Sign in to continue.')
+  // A session can outlive its identity by a minute: Clerk's tokens stay
+  // valid until they expire. A deleted identity reads and writes nothing.
+  if (await lifecycle(database(c.env.DB)).isDeleted(subject))
     return apiError(c, 401, 'unauthorized', 'Sign in to continue.')
 
   c.set('ownerId', subject)

@@ -27,6 +27,7 @@ interface StoredCard {
   categoryId: string
   progress: number
   contentVersion: number
+  progressVersion: number
 }
 
 export type WriteResult =
@@ -53,6 +54,13 @@ export interface VersionedRequest {
   fingerprint: string
 }
 
+/** What a Progress save names besides the Progress. */
+export interface ProgressRequest {
+  progressVersion: number
+  key: string
+  fingerprint: string
+}
+
 /**
  * The mock backend's in-memory data. It lives as long as the page: route
  * changes keep it, a browser refresh starts again from the fixture. Only
@@ -69,6 +77,7 @@ export class MockStore {
   /** Completed edits and deletions by idempotency key. */
   #edits = new Map<string, { fingerprint: string; card: Card }>()
   #deletions = new Map<string, { fingerprint: string }>()
+  #progressSaves = new Map<string, { fingerprint: string; card: Card }>()
 
   constructor(seed: readonly SeedCard[] = fixture) {
     this.reset(seed)
@@ -83,6 +92,7 @@ export class MockStore {
     this.#creations.clear()
     this.#edits.clear()
     this.#deletions.clear()
+    this.#progressSaves.clear()
     for (const card of seed) {
       this.#cards.push({
         id: card.id,
@@ -91,6 +101,7 @@ export class MockStore {
         categoryId: this.#categoryFor(card.category).id,
         progress: card.progress,
         contentVersion: 1,
+        progressVersion: 1,
       })
     }
   }
@@ -117,6 +128,7 @@ export class MockStore {
       category: { id: category.id, name: category.name },
       progress: card.progress,
       contentVersion: card.contentVersion,
+      progressVersion: card.progressVersion,
     }
   }
 
@@ -190,6 +202,7 @@ export class MockStore {
       categoryId: this.#categoryFor(trimmed.category).id,
       progress: 0,
       contentVersion: 1,
+      progressVersion: 1,
     }
     this.#cards.unshift(card)
     return { ok: true, card: this.#toCard(card) }
@@ -300,14 +313,43 @@ export class MockStore {
   }
 
   /**
-   * Sets a Card's Progress, a whole number from 0 to 5. Everything else
-   * about the Card, its place in the default order included, stays.
+   * Sets a Card's Progress, a whole number from 0 to 5, whatever its
+   * version (as another device's save would), and advances its
+   * `progressVersion`. Everything else about the Card, its
+   * `contentVersion` and place in the default order included, stays.
    */
   setProgress(id: string, progress: number): Card | undefined {
     const card = this.#cards.find((c) => c.id === id)
     if (!card) return undefined
     card.progress = progress
+    card.progressVersion++
     return this.#toCard(card)
+  }
+
+  /**
+   * Saves a Card's Progress as the API does: only if it is still at the
+   * request's `progressVersion`, and at most once per idempotency `key`.
+   * Repeating a key with the same `fingerprint` answers the Card as that
+   * save left it, even after later writes.
+   */
+  setProgressOnce(
+    id: string,
+    progress: number,
+    { progressVersion, key, fingerprint }: ProgressRequest,
+  ): VersionedOutcome<Card> {
+    const earlier = this.#progressSaves.get(key)
+    if (earlier) {
+      return earlier.fingerprint === fingerprint
+        ? { ok: true, value: earlier.card, replayed: true }
+        : { ok: false, reason: 'key_reused' }
+    }
+    const current = this.#cards.find((c) => c.id === id)
+    if (!current) return { ok: false, reason: 'not_found' }
+    if (current.progressVersion !== progressVersion)
+      return { ok: false, reason: 'conflict' }
+    const card = this.setProgress(id, progress)!
+    this.#progressSaves.set(key, { fingerprint, card })
+    return { ok: true, value: card, replayed: false }
   }
 
   /**

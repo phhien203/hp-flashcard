@@ -1,4 +1,10 @@
-import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
+import {
+  createHmac,
+  generateKeyPairSync,
+  randomBytes,
+  sign,
+  type KeyObject,
+} from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
@@ -75,20 +81,62 @@ function signToken(
 }
 
 /**
+ * A stand-in for a Clerk webhook endpoint: its signing secret, which the
+ * Worker gets as `CLERK_WEBHOOK_SIGNING_SECRET`, and deliveries signed with
+ * it as Clerk (through Svix) signs them, per Standard Webhooks.
+ */
+export function createWebhookSender(
+  secret = `whsec_${randomBytes(24).toString('base64')}`,
+) {
+  return {
+    secret,
+    /**
+     * The headers of a delivery of exactly `body`, signed at `timestamp`
+     * (seconds) with this sender's secret.
+     */
+    headers(
+      body: string,
+      {
+        id = `msg_${crypto.randomUUID()}`,
+        timestamp = Math.floor(Date.now() / 1000),
+      }: { id?: string; timestamp?: number } = {},
+    ) {
+      const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
+      const signature = createHmac('sha256', key)
+        .update(`${id}.${timestamp}.${body}`)
+        .digest('base64')
+      return {
+        'svix-id': id,
+        'svix-timestamp': String(timestamp),
+        'svix-signature': `v1,${signature}`,
+        'Content-Type': 'application/json',
+      }
+    },
+  }
+}
+
+export type WebhookSender = ReturnType<typeof createWebhookSender>
+
+/**
  * The Worker as `wrangler dev` runs it, through Wrangler's test harness:
  * wrangler.jsonc's entry point, bundling, compatibility settings and D1
  * binding, in workerd, with a local D1 database built by the checked-in
  * migrations (applied as `wrangler d1 migrations apply` applies them). The
- * only test-specific input is the Clerk key, passed as a secret.
+ * only test-specific inputs are the Clerk keys, passed as secrets.
  */
 export async function startWorker(
-  clerk: { issuer: Issuer } | { secrets: Record<string, string> },
+  clerk:
+    | { issuer: Issuer; webhooks?: WebhookSender }
+    | { secrets: Record<string, string> },
 ) {
   const secrets =
     'issuer' in clerk
       ? {
           CLERK_JWT_KEY: clerk.issuer.jwtKey,
           CLERK_AUTHORIZED_PARTIES: APP_ORIGIN,
+          ...(clerk.webhooks
+            ? { CLERK_WEBHOOK_SIGNING_SECRET: clerk.webhooks.secret }
+            : {}),
         }
       : clerk.secrets
   const options = {

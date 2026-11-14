@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { contractChecker, type Method } from '../src/api/contract-check.js'
+import { contractChecker } from '../src/api/contract-check.js'
 import { CARD_QUOTA } from '../src/domain/card-text.js'
 import {
   IDEMPOTENCY_KEY_HEADER,
@@ -14,6 +14,12 @@ import {
   type Issuer,
   type TestWorker,
 } from './test/harness.js'
+import {
+  card,
+  newAccount as createAccount,
+  newKey,
+  type Card,
+} from './test/accounts.js'
 
 /*
  * The Worker at its HTTP seam: the bundled Worker in workerd, with a local
@@ -22,20 +28,9 @@ import {
  * against api/openapi.yaml.
  */
 
-type Card = {
-  id: string
-  question: string
-  answer: string
-  category: { id: string; name: string }
-  progress: number
-  contentVersion: number
-}
-type CardPage = { items: Card[]; total: number; nextOffset: number | null }
-
 let issuer: Issuer
 let worker: TestWorker
 let check: Awaited<ReturnType<typeof contractChecker>>
-let accounts = 0
 
 beforeAll(async () => {
   issuer = createIssuer()
@@ -45,87 +40,7 @@ beforeAll(async () => {
 afterAll(() => worker?.dispose())
 
 /** A new account, with a valid session, so tests don't share Collections. */
-function newAccount() {
-  const userId = `user_test_${++accounts}_${crypto.randomUUID().slice(0, 8)}`
-  const auth = (sid = 'sess_1') => ({
-    Authorization: `Bearer ${issuer.sessionToken({ sub: userId, sid })}`,
-  })
-  const call = async (
-    method: Method,
-    template: string,
-    path: string,
-    status: number,
-    {
-      body,
-      headers,
-    }: { body?: unknown; headers?: Record<string, string> } = {},
-  ) =>
-    check(method, template, path, status, {
-      body,
-      headers: { ...auth(), ...headers },
-    })
-  return {
-    userId,
-    auth,
-    call,
-    create: (
-      body: unknown,
-      { status = 201, key = newKey() }: { status?: number; key?: string } = {},
-    ) =>
-      call('post', '/api/cards', '/api/cards', status, {
-        body,
-        headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-      }),
-    /** Edits `cardId` as of `version`. */
-    edit: (
-      cardId: string,
-      version: number,
-      body: unknown,
-      { status = 200, key = newKey() }: { status?: number; key?: string } = {},
-    ) =>
-      call('patch', '/api/cards/{cardId}', `/api/cards/${cardId}`, status, {
-        body,
-        headers: {
-          [IDEMPOTENCY_KEY_HEADER]: key,
-          [IF_MATCH_HEADER]: ifMatch(version),
-        },
-      }),
-    /** Deletes `cardId` as of `version`. */
-    remove: (
-      cardId: string,
-      version: number,
-      { status = 204, key = newKey() }: { status?: number; key?: string } = {},
-    ) =>
-      call('delete', '/api/cards/{cardId}', `/api/cards/${cardId}`, status, {
-        headers: {
-          [IDEMPOTENCY_KEY_HEADER]: key,
-          [IF_MATCH_HEADER]: ifMatch(version),
-        },
-      }),
-    get: (cardId: string, status = 200) =>
-      call('get', '/api/cards/{cardId}', `/api/cards/${cardId}`, status),
-    statistics: async (query = '') =>
-      (
-        await call(
-          'get',
-          '/api/cards/statistics',
-          `/api/cards/statistics${query}`,
-          200,
-        )
-      ).body as Record<string, number>,
-    list: async (query = '') =>
-      (await call('get', '/api/cards', `/api/cards${query}`, 200))
-        .body as CardPage,
-    categories: async () =>
-      (
-        (await call('get', '/api/categories', '/api/categories', 200)).body as {
-          items: { id: string; name: string; count: number }[]
-        }
-      ).items,
-  }
-}
-
-const newKey = (): string => crypto.randomUUID()
+const newAccount = () => createAccount({ issuer, check })
 
 const everything = {
   categoryIds: [],
@@ -134,12 +49,6 @@ const everything = {
   limit: 48,
   seed: undefined,
 }
-
-const card = (n: number | string, category = 'General') => ({
-  question: `Question ${n}?`,
-  answer: `Answer ${n}.`,
-  category,
-})
 
 describe('authentication', () => {
   const rejected = (headers: Record<string, string>) =>
@@ -549,10 +458,13 @@ describe('expiring retry records', () => {
 describe('the Card quota', () => {
   it(`holds at ${CARD_QUOTA} Cards, even when requests race for the last places`, async () => {
     const account = newAccount()
+    // Filled through the database: over HTTP, the write rate limit would
+    // take 17 minutes.
+    const owned = collection(database((await worker.env()).DB), account.userId)
     for (let start = 0; start < CARD_QUOTA - 2; start += 100) {
       await Promise.all(
         Array.from({ length: Math.min(100, CARD_QUOTA - 2 - start) }, (_, i) =>
-          account.create(card(start + i)),
+          owned.createCard(card(start + i), newKey(), 'hash', Date.now()),
         ),
       )
     }
@@ -599,22 +511,6 @@ describe('the Card quota', () => {
   }, 120_000)
 })
 
-describe('operations of later slices', () => {
-  it.for([['put', '/api/cards/{cardId}/progress', { progress: 1 }]] as const)(
-    '%s %s answers 501 and changes nothing',
-    async ([method, template, body]) => {
-      const account = newAccount()
-      const created = (await account.create(card(1))).body as Card
-      const path = template.replace('{cardId}', created.id)
-      const { body: error } = await account.call(method, template, path, 501, {
-        body,
-      })
-      expect(error).toMatchObject({ code: 'not_implemented' })
-      expect(await account.list()).toMatchObject({ items: [created] })
-    },
-  )
-})
-
 describe('durability', () => {
   it('keeps Cards across Worker instances and sessions', async () => {
     const account = newAccount()
@@ -631,7 +527,7 @@ describe('durability', () => {
   })
 })
 
-/** Sets a Card's Progress in the database: setup only, until Progress saves exist. */
+/** Sets a Card's Progress in the database, leaving its version: setup only. */
 async function setProgress(cardId: string, progress: number) {
   await (
     await worker.env()
@@ -779,6 +675,7 @@ describe('editing a Card', () => {
       category: second.category,
       progress: 3,
       contentVersion: 2,
+      progressVersion: 1,
     })
     expect((await account.list()).items.map((c) => c.id)).toEqual([
       second.id,

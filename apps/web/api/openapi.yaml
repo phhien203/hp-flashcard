@@ -29,11 +29,15 @@ info:
     surrogate or a NUL character (U+0000) is rejected. Text is stored as sent, without Unicode
     normalization.
 
-    Every Card has a `contentVersion`, which each content edit advances.
-    Edits and deletions name the version they were based on in `If-Match`
-    (e.g. `If-Match: "3"`); when the Card has changed since, they answer
-    `409` with `version_conflict` and change nothing, so no device silently
-    overwrites another's edit. Fetch the Card again to review it.
+    Every Card has two independent versions. Its `contentVersion` covers
+    the question, answer and Category: each content edit advances it, and
+    edits and deletions name the version they were based on in `If-Match`
+    (e.g. `If-Match: "3"`). Its `progressVersion` covers its Progress: each
+    Progress save advances it, and names it in `If-Match`. When the version
+    named has moved on, the write answers `409` with `version_conflict` and
+    changes nothing, so no device silently overwrites another's change.
+    Fetch the Card again to review it. Studying never makes an edit or a
+    deletion stale, nor an edit a Progress save.
 
     Every write takes an `Idempotency-Key`. For 24 hours the backend
     remembers a completed write under your account, the operation and the
@@ -42,11 +46,24 @@ info:
     Card has since changed or been deleted. A replayed response describes
     the past: don't let it replace newer data you hold.
 
+    Each account may make at most 60 write requests (`POST`, `PUT`,
+    `PATCH`, `DELETE`) in any 60 seconds, counted across every server
+    instance. Every accepted write request counts, retries and refused
+    writes included. The 61st answers `429` with `rate_limited` and a
+    `Retry-After` header (whole seconds), and does nothing and doesn't
+    count: after waiting, send it again with the same `Idempotency-Key`.
+    Request bodies over 128 KiB answer `413` with `payload_too_large`.
+
+    When an administrator deletes an account, its Collection (Cards,
+    Categories, Progress and retry records) is deleted for good, and every
+    later request for it, even with a session token still unexpired,
+    answers `401`; no request in flight can bring it back. People can't
+    delete their own accounts.
+
     Responses are private to the signed-in person: they carry
     `Cache-Control: private, no-store`, so no shared cache keeps them.
-
-    Operations this backend does not support yet answer `501` with
-    `not_implemented`; they never report a write that did not happen.
+    Every response carries an `X-Request-Id`, which the server's logs
+    record with the route, status and latency (never request content).
 servers:
   - url: /
 security:
@@ -54,6 +71,7 @@ security:
 tags:
   - name: Cards
   - name: Categories
+  - name: Webhooks
 
 paths:
   /api/cards:
@@ -174,8 +192,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/QuotaExceeded'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -288,8 +310,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/VersionConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/ServerError'
     delete:
@@ -325,8 +351,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/VersionConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -342,11 +372,27 @@ paths:
       operationId: setCardProgress
       summary: Set a Card's Progress
       description: |
-        Sets the Card's Progress to the given value: one more to credit an
-        "I Know This", 0 to reset it. The value is absolute, so repeating
-        the request changes nothing more. The Card keeps its identifier,
-        content, Category and place in the default order. A `400` names
-        each rejected field in `fieldErrors`.
+        Sets the Card's Progress to the given value, if its Progress is
+        still at the `progressVersion` named in `If-Match`, and advances its
+        `progressVersion`: one more to credit an "I Know This" (at most 5),
+        0 to reset it. The value is absolute. The Card keeps its identifier,
+        content, `contentVersion`, Category and place in the default order.
+        A `400` names each rejected field in `fieldErrors`.
+
+        If the Card's Progress has been saved since (another device, say),
+        the save answers `409` with `version_conflict` and changes nothing:
+        of two saves based on the same version, at most one succeeds. A
+        content edit doesn't make a Progress save stale. A Card that
+        doesn't exist, or isn't yours, answers `404`; a save never
+        recreates a deleted Card.
+
+        Retrying with the same `Idempotency-Key` and request answers the
+        original `200` again (`Idempotent-Replayed: true`) for 24 hours,
+        even after later saves, edits or the Card's deletion. That Card is
+        as it was then: refetch rather than display it over newer data.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchProgress'
       requestBody:
         required: true
         content:
@@ -355,7 +401,10 @@ paths:
               $ref: '#/components/schemas/ProgressInput'
       responses:
         '200':
-          description: The updated Card.
+          description: The updated Card, or the one this key updated before.
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -366,10 +415,16 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/ServerError'
-        '501':
-          $ref: '#/components/responses/NotImplemented'
 
   /api/categories:
     get:
@@ -388,6 +443,61 @@ paths:
                 $ref: '#/components/schemas/CategoryList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/webhooks/clerk:
+    post:
+      tags: [Webhooks]
+      operationId: receiveClerkWebhook
+      summary: Receive a Clerk event
+      description: |
+        Clerk's webhook endpoint, not for the app. Authenticated by its
+        Standard Webhooks (Svix) signature over the original body, not a
+        session: `svix-id`, `svix-timestamp` and `svix-signature`. A missing,
+        forged or altered signature, or a timestamp more than five minutes
+        off, answers `400` and changes nothing.
+
+        `user.deleted` (an administrator deleted the account) deletes the
+        account's whole Collection for good and refuses every later
+        request for it. Other events are acknowledged and ignored. A
+        delivery repeated with the same `svix-id` is acknowledged without
+        being applied again. `200` means the event's effect has committed;
+        anything else, and Clerk delivers it again.
+      security: []
+      parameters:
+        - name: svix-id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: svix-timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: svix-signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClerkEvent'
+      responses:
+        '200':
+          description: The event was processed, now or before.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookReceipt'
+        '400':
+          $ref: '#/components/responses/InvalidSignature'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -413,6 +523,13 @@ components:
       description: |
         The version of a Card's content (question, answer, Category):
         1 when created, one more after each edit. Progress changes leave it.
+    ProgressVersion:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+      description: |
+        The version of a Card's Progress: 1 when created, one more after
+        each Progress save. Content edits leave it.
     Progress:
       type: integer
       minimum: 0
@@ -431,7 +548,16 @@ components:
     Card:
       type: object
       additionalProperties: false
-      required: [id, question, answer, category, progress, contentVersion]
+      required:
+        [
+          id,
+          question,
+          answer,
+          category,
+          progress,
+          contentVersion,
+          progressVersion,
+        ]
       properties:
         id:
           $ref: '#/components/schemas/CardId'
@@ -447,6 +573,8 @@ components:
           $ref: '#/components/schemas/Progress'
         contentVersion:
           $ref: '#/components/schemas/ContentVersion'
+        progressVersion:
+          $ref: '#/components/schemas/ProgressVersion'
     CardPage:
       type: object
       additionalProperties: false
@@ -571,7 +699,9 @@ components:
             - idempotency_key_reused
             - version_conflict
             - server_error
-            - not_implemented
+            - rate_limited
+            - payload_too_large
+            - invalid_signature
         message:
           type: string
         fieldErrors:
@@ -579,6 +709,25 @@ components:
           description: Messages keyed by body field or query parameter name.
           additionalProperties:
             type: string
+    ClerkEvent:
+      type: object
+      required: [type, data]
+      description: |
+        A Clerk webhook event, e.g. `user.deleted`, whose `data.id` is the
+        deleted user's id.
+      properties:
+        type:
+          type: string
+        data:
+          type: object
+    WebhookReceipt:
+      type: object
+      additionalProperties: false
+      required: [received]
+      properties:
+        received:
+          type: boolean
+          enum: [true]
 
   securitySchemes:
     clerkSession:
@@ -610,6 +759,16 @@ components:
       schema:
         type: string
         pattern: '^"[1-9][0-9]{0,15}"$'
+    IfMatchProgress:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        The Card's `progressVersion` this save is based on, as a quoted
+        entity tag: `"3"`.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]{0,15}"$'
 
   headers:
     IdempotentReplayed:
@@ -636,7 +795,8 @@ components:
     Unauthorized:
       description: |
         The request has no session token, or one that is expired, malformed
-        or otherwise invalid. Sign in again.
+        or otherwise invalid, or its account has been deleted. Sign in
+        again.
       content:
         application/json:
           schema:
@@ -661,8 +821,30 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    NotImplemented:
-      description: This backend does not support the operation yet.
+    PayloadTooLarge:
+      description: The request body is larger than 128 KiB; nothing was read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: |
+        This account has made 60 write requests in the last 60 seconds.
+        Nothing was done, and this request doesn't count. Wait
+        `Retry-After` seconds, then send it again.
+      headers:
+        Retry-After:
+          description: Whole seconds until the account may write again.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InvalidSignature:
+      description: The webhook's signature is missing, invalid or too old.
       content:
         application/json:
           schema:
