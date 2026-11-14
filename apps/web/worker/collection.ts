@@ -17,7 +17,11 @@ import {
   categoryKey,
   type CardText,
 } from '../src/domain/card-text.js'
-import { IDEMPOTENCY_TTL_MS, OPERATIONS } from '../src/domain/idempotency.js'
+import {
+  IDEMPOTENCY_TTL_MS,
+  OPERATIONS,
+  type Operation,
+} from '../src/domain/idempotency.js'
 import { MASTERED } from '../src/domain/progress.js'
 import type { CardListQuery } from '../src/domain/requests.js'
 import { seededShuffle } from '../src/domain/shuffle.js'
@@ -145,7 +149,7 @@ export function collection(db: Database, ownerId: string) {
     db.select(cardColumns).from(cards).innerJoin(categories, cardInCategory)
 
   /** The live record of an earlier request with this key, if any. */
-  const findRecord = async (operation: string, key: string, now: number) =>
+  const findRecord = async (operation: Operation, key: string, now: number) =>
     (
       await db
         .select()
@@ -176,7 +180,7 @@ export function collection(db: Database, ownerId: string) {
   /** An earlier edit or Progress save with this key: repeated, or refused. */
   const earlierEdit = async (
     { key, requestHash, now }: Omit<VersionedWrite, 'contentVersion'>,
-    operation: string = OPERATIONS.update,
+    operation: Operation = OPERATIONS.update,
   ): Promise<Edit | undefined> => {
     const record = await findRecord(operation, key, now)
     if (!record) return undefined
@@ -241,7 +245,7 @@ export function collection(db: Database, ownerId: string) {
    * hinge on. The response is filled in once the write has happened.
    */
   const recordIfCurrent = (
-    operation: string,
+    operation: Operation,
     { key, requestHash, now }: Omit<VersionedWrite, 'contentVersion'>,
     current: SQL | undefined,
   ) =>
@@ -264,7 +268,7 @@ export function collection(db: Database, ownerId: string) {
       // Whether this request's batch made the record, or found another's.
       .returning({ key: idempotencyRecords.key })
 
-  const thisRecord = (operation: string, key: string) =>
+  const thisRecord = (operation: Operation, key: string) =>
     and(
       eq(idempotencyRecords.ownerId, ownerId),
       eq(idempotencyRecords.operation, operation),

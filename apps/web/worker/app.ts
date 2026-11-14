@@ -30,7 +30,7 @@ import {
   parseVersionedWriteHeaders,
 } from '../src/domain/requests.js'
 import type { AppEnv } from './app-env.js'
-import { requireSession } from './auth.js'
+import { requireSession, signInAgain } from './auth.js'
 import { collection, database } from './collection.js'
 import { apiError } from './errors.js'
 import { isIdentityDeleted } from './lifecycle.js'
@@ -82,9 +82,6 @@ const progressConflict = (c: Context) =>
     'version_conflict',
     'This Card’s Progress has changed since that version. Fetch it again to review it.',
   )
-
-const signInAgain = (c: Context) =>
-  apiError(c, 401, 'unauthorized', 'Sign in to continue.')
 
 /** SHA-256 of `text`, in hex. */
 async function sha256(text: string) {
