@@ -106,6 +106,8 @@ try {
 
   await timed('create', () => {
     wrangler('d1', 'create', name, '--location', option('--location') ?? 'eeur')
+    // Created: from here on, cleanup must remove it even if reading it fails.
+    database = { name }
     const info = json(wrangler('d1', 'info', name, '--json'))
     database = { name, id: info.uuid }
     assertDisposable(database, config)
