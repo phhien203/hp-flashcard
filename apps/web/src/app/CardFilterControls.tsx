@@ -1,8 +1,7 @@
-import { Button, CategoryFilter, Checkbox } from '@hp-flashcard/ui'
+import { CategoryFilter, Checkbox } from '@hp-flashcard/ui'
 
 import type { Category } from '../api/types.js'
 import { idsOf, namesOf } from './category-selection.js'
-import { Notice } from './Notice.js'
 import type { CardFilters } from './queries.js'
 
 /** What the person changed: the chosen Categories, or Hide Mastered. */
@@ -44,20 +43,5 @@ export function CardFilterControls({
         Hide Mastered
       </label>
     </div>
-  )
-}
-
-export interface CategoriesErrorNoticeProps {
-  onRetry: () => void
-}
-
-/** The Categories failed to load: the filter can't offer them. */
-export function CategoriesErrorNotice({ onRetry }: CategoriesErrorNoticeProps) {
-  return (
-    <Notice role="alert" title="Categories could not be loaded.">
-      <Button variant="outline" onClick={onRetry}>
-        Retry
-      </Button>
-    </Notice>
   )
 }

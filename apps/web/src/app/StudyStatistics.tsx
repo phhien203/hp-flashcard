@@ -1,9 +1,9 @@
-import { Button, StatTile, type StatTileAccent } from '@hp-flashcard/ui'
+import { StatTile, type StatTileAccent } from '@hp-flashcard/ui'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useId, type ReactNode } from 'react'
 
 import type { CardStatistics } from '../api/types.js'
-import { Notice } from './Notice.js'
+import { LoadFailedNotice } from './Notice.js'
 
 /*
  * The tiles' icons, drawn in a 16×16 box in currentColor. StatTile hides
@@ -86,15 +86,11 @@ export function StudyStatistics({
         Study Statistics
       </h2>
       {statistics.isError && !statistics.data ? (
-        <Notice role="alert" title="Statistics could not be loaded.">
-          <Button
-            variant="outline"
-            disabled={statistics.isFetching}
-            onClick={() => void statistics.refetch()}
-          >
-            Retry
-          </Button>
-        </Notice>
+        <LoadFailedNotice
+          title="Statistics could not be loaded."
+          retrying={statistics.isFetching}
+          onRetry={() => void statistics.refetch()}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-200 sm:grid-cols-2 xl:grid-cols-1">
           {TILES.map(({ key, label, accent, icon }) => (

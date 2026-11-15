@@ -1,3 +1,4 @@
+import { Button } from '@hp-flashcard/ui'
 import type { ReactNode } from 'react'
 
 /** A centred message in a card, for loading, empty and failure states. */
@@ -27,5 +28,28 @@ export function Notice({
       </div>
       {children}
     </div>
+  )
+}
+
+export interface LoadFailedNoticeProps {
+  /** What failed, e.g. "Cards could not be loaded." */
+  title: string
+  /** Whether the Retry is already under way, so it can't be sent twice. */
+  retrying?: boolean
+  onRetry: () => void
+}
+
+/** A read failed with nothing to show in its place: say so and offer Retry. */
+export function LoadFailedNotice({
+  title,
+  retrying = false,
+  onRetry,
+}: LoadFailedNoticeProps) {
+  return (
+    <Notice role="alert" title={title}>
+      <Button variant="outline" disabled={retrying} onClick={onRetry}>
+        Retry
+      </Button>
+    </Notice>
   )
 }

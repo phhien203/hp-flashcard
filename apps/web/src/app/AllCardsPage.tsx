@@ -5,16 +5,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { Card, CategoryList } from '../api/types.js'
 import { MASTERED } from '../domain/progress.js'
 import { useApi } from './api-context.js'
-import {
-  CardFilterControls,
-  CategoriesErrorNotice,
-} from './CardFilterControls.js'
+import { CardFilterControls } from './CardFilterControls.js'
 import { withExistingCategories } from './category-selection.js'
 import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
 import { useKeptEdit } from './kept-edit.js'
-import { Notice } from './Notice.js'
+import { LoadFailedNotice, Notice } from './Notice.js'
 import {
   fetchCard,
   INITIAL_FILTERS,
@@ -186,21 +183,20 @@ export function AllCardsPage({
       </div>
 
       {categories.isError && (
-        <CategoriesErrorNotice onRetry={() => void categories.refetch()} />
+        <LoadFailedNotice
+          title="Categories could not be loaded."
+          onRetry={() => void categories.refetch()}
+        />
       )}
 
       {cards.isPending ? (
         <Notice role="status" title="Loading cards…" />
       ) : cards.isError && !cards.data ? (
-        <Notice role="alert" title="Cards could not be loaded.">
-          <Button
-            variant="outline"
-            disabled={cards.isFetching}
-            onClick={() => void cards.refetch()}
-          >
-            Retry
-          </Button>
-        </Notice>
+        <LoadFailedNotice
+          title="Cards could not be loaded."
+          retrying={cards.isFetching}
+          onRetry={() => void cards.refetch()}
+        />
       ) : loaded.length === 0 ? (
         <NoCardsNotice
           filtered={filtered}
@@ -246,15 +242,11 @@ export function AllCardsPage({
           </ul>
 
           {cards.isFetchNextPageError && (
-            <Notice role="alert" title="More cards could not be loaded.">
-              <Button
-                variant="outline"
-                disabled={cards.isFetchingNextPage}
-                onClick={() => void cards.fetchNextPage()}
-              >
-                Retry
-              </Button>
-            </Notice>
+            <LoadFailedNotice
+              title="More cards could not be loaded."
+              retrying={cards.isFetchingNextPage}
+              onRetry={() => void cards.fetchNextPage()}
+            />
           )}
 
           {cards.hasNextPage && !cards.isFetchNextPageError && (

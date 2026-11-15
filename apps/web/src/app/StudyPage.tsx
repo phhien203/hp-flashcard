@@ -6,13 +6,10 @@ import type { Card } from '../api/types.js'
 import { progressFingerprint } from '../domain/idempotency.js'
 import { MASTERED } from '../domain/progress.js'
 import { useApi } from './api-context.js'
-import {
-  CardFilterControls,
-  CategoriesErrorNotice,
-} from './CardFilterControls.js'
+import { CardFilterControls } from './CardFilterControls.js'
 import { withExistingCategories } from './category-selection.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
-import { Notice } from './Notice.js'
+import { LoadFailedNotice, Notice } from './Notice.js'
 import {
   INITIAL_FILTERS,
   PAGE_SIZE,
@@ -176,21 +173,20 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
 
         {categories.isError && (
           <div className="p-200 md:px-300">
-            <CategoriesErrorNotice onRetry={() => void categories.refetch()} />
+            <LoadFailedNotice
+              title="Categories could not be loaded."
+              onRetry={() => void categories.refetch()}
+            />
           </div>
         )}
 
         {cards.isError && !card ? (
           <div className="p-200 md:p-300">
-            <Notice role="alert" title="Cards could not be loaded.">
-              <Button
-                variant="outline"
-                disabled={cards.isFetching}
-                onClick={() => void cards.refetch()}
-              >
-                Retry
-              </Button>
-            </Notice>
+            <LoadFailedNotice
+              title="Cards could not be loaded."
+              retrying={cards.isFetching}
+              onRetry={() => void cards.refetch()}
+            />
           </div>
         ) : empty ? (
           <NothingToStudy
