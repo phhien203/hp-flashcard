@@ -4,6 +4,8 @@
 
 Before handing work back, it must be **green**: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`. Any change to exports, the build, or dependencies of `packages/ui` also needs `pnpm build && pnpm check:package`.
 
+Before writing, changing, or reviewing React components, hooks, state/data flows, or their tests, read [CODING_STANDARDS.md](CODING_STANDARDS.md). It adapts _The Conscious React_ to this repository; the package-specific rules below still apply.
+
 ## packages/ui source rules
 
 These exist because `dist/` (the JS and the `.d.ts` files emitted by `tsc`) must work for consumers on any `moduleResolution`. `pnpm check:package` (attw) catches violations.
