@@ -21,7 +21,7 @@ export const writeJson = (filename: string, value: unknown): void => {
   )
 }
 
-// The one agent every factory workflow runs. It authenticates with a Claude
+// The default factory agent. It authenticates with a Claude
 // subscription. To bill the API instead, pass ANTHROPIC_API_KEY here and in
 // the workflow's env in place of CLAUDE_CODE_OAUTH_TOKEN.
 //
@@ -34,3 +34,18 @@ export const claudeAgent = () =>
       CLAUDE_CODE_OAUTH_TOKEN: required('CLAUDE_CODE_OAUTH_TOKEN'),
     },
   })
+
+// The GPT workflows restore subscription credentials before invoking us.
+// Leave claudeAgent unchanged for factory entrypoints without a GPT variant.
+export const factoryAgent = () => {
+  switch (process.env.FACTORY_AGENT ?? 'claude') {
+    case 'claude':
+      return claudeAgent()
+    case 'codex':
+      return sandcastle.codex(process.env.CODEX_MODEL || 'gpt-6.1-sol', {
+        effort: 'high',
+      })
+    default:
+      throw new Error(`Unknown factory agent: ${process.env.FACTORY_AGENT}`)
+  }
+}

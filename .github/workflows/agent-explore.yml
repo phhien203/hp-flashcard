@@ -70,6 +70,18 @@ name: Agent — Explore The Tickets
 on:
   issues:
     types: [labeled]
+  workflow_call:
+    inputs:
+      gpt:
+        type: boolean
+        default: false
+    secrets:
+      FACTORY_PAT:
+        required: true
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      CODEX_AUTH_JSON:
+        required: false
 
 # One batch at a time, and never cancelled. A label that lands mid-run queues
 # one more run behind this one, and that run lists the batch again when it
@@ -77,12 +89,12 @@ on:
 # batch is only what was labelled mid-run, and nothing is lost. Every other
 # label gets a throwaway group of its own, so it can never bump that queued run.
 concurrency:
-  group: ${{ github.event.label.name == 'agent:explore' && 'agent-explore' || format('ignore-{0}', github.run_id) }}
+  group: ${{ github.event.label.name == (inputs.gpt && 'agent:explore:gpt' || 'agent:explore') && (inputs.gpt && 'agent-explore-gpt' || 'agent-explore') || format('ignore-explore-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   explore:
-    if: github.event.label.name == 'agent:explore'
+    if: github.event.label.name == (inputs.gpt && 'agent:explore:gpt' || 'agent:explore')
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -97,6 +109,7 @@ jobs:
 
     env:
       GH_REPO: ${{ github.repository }}
+      EXPLORE_LABEL: ${{ inputs.gpt && 'agent:explore:gpt' || 'agent:explore' }}
 
     steps:
       - name: Checkout
@@ -121,7 +134,7 @@ jobs:
           # and is not one of the factory's own status lines (they carry a
           # hidden `<!-- factory:status -->`).
           mkdir -p /tmp/explore
-          gh issue list --state open --label "agent:explore" --limit 100 \
+          gh issue list --state open --label "$EXPLORE_LABEL" --limit 100 \
             --json number,title,body,createdAt,comments \
             | jq 'map(.comments |= map(select(
                 (.authorAssociation | IN("OWNER", "MEMBER", "COLLABORATOR"))
@@ -142,7 +155,7 @@ jobs:
               --description "An agent run failed here. Its comment says how to retry" || true
           fi
           for n in $(jq -r '.[]' <<< "$numbers"); do
-            gh issue edit "$n" --remove-label "agent:explore" || true
+            gh issue edit "$n" --remove-label "$EXPLORE_LABEL" || true
             gh issue edit "$n" --remove-label "agent:blocked" || true
             gh issue edit "$n" --add-label "agent:in-progress"
           done
@@ -153,18 +166,19 @@ jobs:
         # `pnpm install --frozen-lockfile` (which runs husky via `prepare`).
         uses: ./.github/actions/setup
 
-      - name: Install Claude Code
-        if: steps.batch.outputs.numbers != '[]'
-        run: npm install -g @anthropic-ai/claude-code
-
       - name: Explore
         if: steps.batch.outputs.numbers != '[]'
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ !inputs.gpt && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          CODEX_AUTH_JSON: ${{ inputs.gpt && secrets.CODEX_AUTH_JSON || '' }}
+          CODEX_MODEL: ${{ vars.CODEX_MODEL }}
           OUTPUT_DIR: ${{ runner.temp }}
         # The plan comes back as plan.json, shaped and validated by
         # .sandcastle/agent-workflows/explore/plan-schema.ts.
-        run: pnpm exec tsx .sandcastle/agent-workflows/explore/explore.ts
+        uses: ./.github/actions/run-factory-agent
+        with:
+          gpt: ${{ inputs.gpt || false }}
+          entrypoint: .sandcastle/agent-workflows/explore/explore.ts
 
       - name: Hand the plan to the apply job
         id: plan
@@ -197,6 +211,7 @@ jobs:
       GH_TOKEN: ${{ secrets.FACTORY_PAT }}
       GH_REPO: ${{ github.repository }}
       RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      IMPLEMENT_LABEL: ${{ inputs.gpt && 'agent:implement:gpt' || 'agent:implement' }}
 
     steps:
       - name: Take the screenshots from the explore job
@@ -264,7 +279,7 @@ jobs:
             if [ -n "$dup" ]; then
               next="Closed as duplicate of #$dup."
             else
-              next="Explored. Settle the open questions, then label \`agent:implement\` yourself."
+              next="Explored. Settle the open questions, then label \`${IMPLEMENT_LABEL}\` yourself."
             fi
 
             jq -r '.comment' <<< "$entry" > /tmp/comment.md
@@ -300,6 +315,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       BATCH: ${{ needs.explore.outputs.batch }}
       RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EXPLORE_LABEL: ${{ inputs.gpt && 'agent:explore:gpt' || 'agent:explore' }}
 
     steps:
       - name: Mark blocked on failure
@@ -311,7 +327,7 @@ jobs:
               | grep -qx "agent:in-progress" || continue
             gh issue edit "$n" --add-label "agent:blocked" || true
             gh issue comment "$n" --body \
-              "Explore run **failed** — [logs](${RUN_URL}). Re-add \`agent:explore\` to retry. <!-- factory:status -->"
+              "Explore run **failed** — [logs](${RUN_URL}). Re-add \`${EXPLORE_LABEL}\` to retry. <!-- factory:status -->"
           done
 
       - name: Always remove in-progress

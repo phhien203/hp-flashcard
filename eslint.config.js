@@ -12,6 +12,7 @@ export default defineConfig([
     '**/dist',
     '**/storybook-static',
     '**/coverage',
+    '**/.wrangler',
     // Generated from apps/web/api/openapi.yaml.
     'apps/web/src/api/schema.d.ts',
   ]),

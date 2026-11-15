@@ -71,6 +71,18 @@ name: Agent — Implement A Ticket
 on:
   issues:
     types: [labeled]
+  workflow_call:
+    inputs:
+      gpt:
+        type: boolean
+        default: false
+    secrets:
+      FACTORY_PAT:
+        required: true
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      CODEX_AUTH_JSON:
+        required: false
 
 # The permissions block. It is per-workflow, and it is a ceiling on the
 # GITHUB_TOKEN — and the GITHUB_TOKEN now only checks the code out. Everything
@@ -82,13 +94,13 @@ permissions:
 # One run per ticket. A second label event on the same issue waits for the
 # first to finish rather than building the same ticket twice at once.
 concurrency:
-  group: agent-implement-${{ github.event.issue.number }}
+  group: ${{ github.event.label.name == (inputs.gpt && 'agent:implement:gpt' || 'agent:implement') && format('agent-implement-{0}', github.event.issue.number) || format('ignore-implement-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   implement:
     # Every other label on every other issue stops here, for free.
-    if: github.event.label.name == 'agent:implement'
+    if: github.event.label.name == (inputs.gpt && 'agent:implement:gpt' || 'agent:implement')
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -98,6 +110,8 @@ jobs:
       # The run id makes the branch new on every run. See WHAT IT DOES.
       BRANCH: agent/issue-${{ github.event.issue.number }}-${{ github.run_id }}
       RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      IMPLEMENT_LABEL: ${{ inputs.gpt && 'agent:implement:gpt' || 'agent:implement' }}
+      REVIEW_LABEL: ${{ inputs.gpt && 'agent:review:gpt' || 'agent:review' }}
 
     steps:
       - name: Transition labels
@@ -111,7 +125,7 @@ jobs:
             --description "An agent is working on this right now" || true
           gh label create "agent:blocked" --color B60205 \
             --description "An agent run failed here. Its comment says how to retry" || true
-          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --remove-label "$IMPLEMENT_LABEL" || true
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:blocked" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
 
@@ -129,9 +143,6 @@ jobs:
       - name: Install Playwright Chromium
         # `pnpm test` runs Vitest in browser mode, so the agent needs a browser.
         run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
 
       - name: Open the branch
         id: branch
@@ -177,8 +188,13 @@ jobs:
 
       - name: Build the ticket
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: pnpm exec tsx .sandcastle/agent-workflows/implement/implement.ts
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ !inputs.gpt && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          CODEX_AUTH_JSON: ${{ inputs.gpt && secrets.CODEX_AUTH_JSON || '' }}
+          CODEX_MODEL: ${{ vars.CODEX_MODEL }}
+        uses: ./.github/actions/run-factory-agent
+        with:
+          gpt: ${{ inputs.gpt || false }}
+          entrypoint: .sandcastle/agent-workflows/implement/implement.ts
 
       - name: Check the agent committed
         # The agent owns the commits now, so this step owns the question of
@@ -261,12 +277,12 @@ jobs:
           GH_TOKEN: ${{ secrets.FACTORY_PAT }}
         run: |
           set -euo pipefail
-          gh label create "agent:review" --color 5319E7 \
+          gh label create "$REVIEW_LABEL" --color 5319E7 \
             --description "Ask the review workflow to read this pull request" || true
 
           # No `|| true`: if this fails the chain stopped at its last hop, and
           # a red run says so where a green one would hide it.
-          gh pr edit "$BRANCH" --add-label "agent:review"
+          gh pr edit "$BRANCH" --add-label "$REVIEW_LABEL"
 
       - name: Mark blocked on failure
         if: failure()
@@ -284,7 +300,7 @@ jobs:
           where=""
           [ -n "$PR_URL" ] && where=" Pull request: ${PR_URL}, from \`${BRANCH}\`."
           retry=""
-          [ "$JOB_STATUS" = "failure" ] && retry=" Re-add \`agent:implement\` to retry."
+          [ "$JOB_STATUS" = "failure" ] && retry=" Re-add \`${IMPLEMENT_LABEL}\` to retry."
           # Tagged, so the next run on this ticket leaves it out of the ticket.
           gh issue comment "$ISSUE_NUMBER" --body \
             "Implementer run **${JOB_STATUS}** — [logs](${RUN_URL}).${where}${retry} <!-- factory:status -->"
