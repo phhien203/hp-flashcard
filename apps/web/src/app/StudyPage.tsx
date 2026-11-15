@@ -20,6 +20,7 @@ import { MASTERED } from '../domain/progress.js'
 import { rateLimitedMessage } from '../domain/rate-limit.js'
 import {
   isConflict,
+  isMaintenance,
   isNotFound,
   isRateLimited,
   PAGE_SIZE,
@@ -77,6 +78,13 @@ function saveFailure(error: unknown): {
     return {
       title: 'Your progress could not be saved.',
       description: rateLimitedMessage(error.retryAfter),
+      retry: true,
+    }
+  if (isMaintenance(error))
+    return {
+      title: 'Your progress could not be saved.',
+      description:
+        'Flashcard is down for maintenance. The card keeps its previous progress; try again in a few minutes.',
       retry: true,
     }
   if (error instanceof ApiError && error.status === 401)

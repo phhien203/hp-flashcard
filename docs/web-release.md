@@ -79,7 +79,7 @@ Before enabling production, verify the provider's actual same-Worker queue/cance
 4. For code-only rollback, choose a previously healthy retained version in **Cloudflare → Worker → Deployments → Rollback**, or use the installed Wrangler rollback command from an authorized local terminal with `--env production`. Review compatibility with every migration since that version. Do not rebuild current main as a substitute for the old version.
 5. Verify the Custom Domain's serving version/commit, frontend assets and API auth. Record the result, then resume automatic builds. A subsequent main push intentionally deploys main again; merge a forward fix before resuming if needed.
 
-Rollback never applies down-migrations, seeds fixtures, restores D1 or discards newer writes. Database recovery is separate, manual and database-wide, with maintenance/deletion-identity reconciliation (ADR 0005 and the next ticket). Cloudflare retains a bounded version history; older browser tabs may need a reload after code rollback.
+Rollback never applies down-migrations, seeds fixtures, restores D1 or discards newer writes. Database recovery is separate, manual and database-wide, with maintenance and deletion-identity reconciliation: see [web-recovery.md](web-recovery.md). Cloudflare retains a bounded version history; older browser tabs may need a reload after code rollback.
 
 ## Verification status
 

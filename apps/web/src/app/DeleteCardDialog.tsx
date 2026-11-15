@@ -16,10 +16,12 @@ import { ApiError } from '../api/client.js'
 import { useApi } from './api-context.js'
 import { FormError, isNetworkFailure } from './card-form.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
+import { maintenanceWriteMessage } from '../domain/maintenance.js'
 import { rateLimitedMessage } from '../domain/rate-limit.js'
 import {
   fetchCard,
   isConflict,
+  isMaintenance,
   isNotFound,
   isRateLimited,
   useDeleteCard,
@@ -159,7 +161,9 @@ export function DeleteCardDialog({
                             ? 'Your session has ended. Sign in again to delete your card.'
                             : isRateLimited(failure)
                               ? rateLimitedMessage(failure.retryAfter)
-                              : 'Your card could not be deleted. Please try again.',
+                              : isMaintenance(failure)
+                                ? maintenanceWriteMessage('deleted')
+                                : 'Your card could not be deleted. Please try again.',
                       )
                   },
                 },

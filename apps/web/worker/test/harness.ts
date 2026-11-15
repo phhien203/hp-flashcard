@@ -6,6 +6,8 @@ import {
   type KeyObject,
 } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 
 import { createTestHarness } from 'wrangler'
@@ -126,10 +128,15 @@ export type WebhookSender = ReturnType<typeof createWebhookSender>
  */
 export async function startWorker(
   clerk:
-    | { issuer: Issuer; webhooks?: WebhookSender }
+    | {
+        issuer: Issuer
+        webhooks?: WebhookSender
+        /** More secrets or variables, e.g. a recovery's. */
+        extra?: Record<string, string>
+      }
     | { secrets: Record<string, string> },
 ) {
-  const secrets =
+  const base =
     'issuer' in clerk
       ? {
           CLERK_JWT_KEY: clerk.issuer.jwtKey,
@@ -137,12 +144,14 @@ export async function startWorker(
           ...(clerk.webhooks
             ? { CLERK_WEBHOOK_SIGNING_SECRET: clerk.webhooks.secret }
             : {}),
+          ...clerk.extra,
         }
       : clerk.secrets
-  const options = {
+  const optionsWith = (secrets: Record<string, string>) => ({
     root: APP_DIR,
     workers: [{ configPath: './wrangler.jsonc', secrets }],
-  }
+  })
+  let options = optionsWith(base)
   // wrangler.jsonc serves the built frontend from dist/, which must exist,
   // though the API needs no build.
   await mkdir(`${APP_DIR}dist`, { recursive: true })
@@ -162,6 +171,15 @@ export async function startWorker(
      * database, as a deployment or a new isolate would.
      */
     restart: () => server.update(options),
+    /**
+     * Deploys the Worker again with `extra` secrets or variables in place
+     * of the previous extras, keeping the database, as an operator's
+     * `wrangler secret put` or `secret delete` would.
+     */
+    reconfigure: (extra: Record<string, string>) => {
+      options = optionsWith({ ...base, ...extra })
+      return server.update(options)
+    },
     /** The Worker's bindings, e.g. its D1 database, from Node. */
     env: () => server.getWorker<Env>().getEnv(),
     /** Runs the daily cron, as Cloudflare would. */
@@ -171,3 +189,97 @@ export async function startWorker(
 }
 
 export type TestWorker = Awaited<ReturnType<typeof startWorker>>
+
+/**
+ * A stand-in for Clerk's Backend API: `GET /v1/users?user_id=…` answers
+ * which of the ids it is asked about still exist, as Clerk does, for the
+ * secret key it was made with. `failing` makes it answer 503.
+ */
+export async function startClerkApi(
+  secretKey = `sk_test_${randomBytes(12).toString('hex')}`,
+) {
+  const existing = new Set<string>()
+  const state = { failing: false, requests: 0 }
+  const server = createServer((request, response) => {
+    state.requests++
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    const send = (status: number, body: unknown) => {
+      response.writeHead(status, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify(body))
+    }
+    if (request.headers.authorization !== `Bearer ${secretKey}`)
+      return send(401, { errors: [{ code: 'authentication_invalid' }] })
+    if (state.failing) return send(503, { errors: [] })
+    if (request.method !== 'GET' || url.pathname !== '/v1/users')
+      return send(404, { errors: [] })
+    send(
+      200,
+      url.searchParams
+        .getAll('user_id')
+        .filter((id) => existing.has(id))
+        .map((id) => ({ id, object: 'user' })),
+    )
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
+  return {
+    secretKey,
+    url: `http://127.0.0.1:${port}`,
+    /** Clerk has these users (until `remove`d). */
+    add: (...ids: string[]) => ids.forEach((id) => existing.add(id)),
+    /** An administrator deleted these users in Clerk. */
+    remove: (...ids: string[]) => ids.forEach((id) => existing.delete(id)),
+    state,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  }
+}
+
+export type ClerkApi = Awaited<ReturnType<typeof startClerkApi>>
+
+/** Every table a restore puts back, in an order foreign keys accept. */
+const RESTORED_TABLES = [
+  'categories',
+  'cards',
+  'idempotency_records',
+  'write_requests',
+  'webhook_deliveries',
+  'recoveries',
+  // Last: its triggers would refuse the rows above for a deleted owner.
+  'deleted_identities',
+] as const
+
+/**
+ * A local stand-in for D1 Time Travel, which only exists remotely: the
+ * whole database's rows at a moment (the bookmark), from `database`, and a restore that
+ * puts every table back to them, losing everything written since. The
+ * real restore is rehearsed on a disposable remote database
+ * (scripts/recovery-drill.mjs).
+ */
+export async function bookmark(database: () => Promise<D1Database>) {
+  const d1 = await database()
+  const rows: Record<string, Record<string, unknown>[]> = {}
+  for (const table of RESTORED_TABLES)
+    rows[table] = (await d1.prepare(`SELECT * FROM ${table}`).all()).results
+  return {
+    /** Overwrites the whole database with the bookmarked rows. */
+    restore: async () => {
+      // A fresh stub: redeploying the Worker invalidates older ones.
+      const d1 = await database()
+      await d1.batch([
+        ...[...RESTORED_TABLES]
+          .reverse()
+          .map((table) => d1.prepare(`DELETE FROM ${table}`)),
+        ...RESTORED_TABLES.flatMap((table) =>
+          rows[table]!.map((row) => {
+            const columns = Object.keys(row)
+            return d1
+              .prepare(
+                `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+              )
+              .bind(...Object.values(row))
+          }),
+        ),
+      ])
+    },
+  }
+}

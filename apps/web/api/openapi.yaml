@@ -61,6 +61,12 @@ info:
     answers `401`; no request in flight can bring it back. People can't
     delete their own accounts.
 
+    During a database recovery, an operator closes the API: every
+    Collection operation answers `503` with `maintenance` and a
+    `Retry-After` header, before any session is checked or data read, so
+    nothing a refused request carried was saved. Send it again later. The
+    health endpoint and Clerk's webhooks stay available.
+
     Responses are private to the signed-in person: they carry
     `Cache-Control: private, no-store`, so no shared cache keeps them.
     Every response carries an `X-Request-Id`, which the server's logs
@@ -73,6 +79,7 @@ tags:
   - name: Cards
   - name: Categories
   - name: Webhooks
+  - name: Recovery
 
 paths:
   /api/health:
@@ -87,12 +94,17 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [status, version, commit]
+                required: [status, maintenance, version, commit]
                 additionalProperties: false
                 properties:
                   status:
                     type: string
                     const: ok
+                  maintenance:
+                    type: boolean
+                    description: |
+                      Whether a database recovery has the API closed: every
+                      Collection operation answers `503`.
                   version:
                     type: string
                   commit:
@@ -164,6 +176,8 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -223,6 +237,8 @@ paths:
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -259,6 +275,8 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -284,6 +302,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
     patch:
@@ -341,6 +361,8 @@ paths:
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
     delete:
@@ -382,6 +404,8 @@ paths:
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -448,6 +472,8 @@ paths:
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -468,6 +494,8 @@ paths:
                 $ref: '#/components/schemas/CategoryList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Maintenance'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -521,6 +549,106 @@ paths:
                 $ref: '#/components/schemas/WebhookReceipt'
         '400':
           $ref: '#/components/responses/InvalidSignature'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/recovery:
+    get:
+      tags: [Recovery]
+      operationId: getRecovery
+      summary: Inspect the database recovery under way
+      description: |
+        Operator only, and only while a recovery is under way: the Worker
+        has a `RECOVERY_EPOCH` and a `RECOVERY_ADMIN_TOKEN` (otherwise
+        `404`). See docs/web-recovery.md. Reports the epoch's
+        reconciliation and reopening, and counts of what D1 holds,
+        including rows a healthy database never has. No Card text or
+        identities.
+      security:
+        - recoveryAdmin: []
+      responses:
+        '200':
+          description: Where the recovery stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/recovery/reconcile:
+    post:
+      tags: [Recovery]
+      operationId: reconcileRecovery
+      summary: Purge identities Clerk has deleted
+      description: |
+        Asks Clerk which owners in D1 still exist. Every owner Clerk no
+        longer has, and every tombstoned owner still holding rows, counts
+        as deleted. With `purge: false`, only counts them. With
+        `purge: true` and `expectedDeleted` equal to that count, purges and
+        tombstones them, as the `user.deleted` webhook would, and records
+        this epoch as reconciled, in one transaction. Any other count
+        answers `409` and purges nothing. If Clerk doesn't answer, `502`
+        and nothing changes.
+      security:
+        - recoveryAdmin: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcileRequest'
+      responses:
+        '200':
+          description: The deleted identities, counted or purged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reconciliation'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RecoveryState'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '502':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /api/recovery/reopen:
+    post:
+      tags: [Recovery]
+      operationId: reopenRecovery
+      summary: Reopen the API after a verified recovery
+      description: |
+        Reopens the API, only if this epoch was reconciled in the database
+        as it is now (a later restore undoes that) and the database holds
+        no inconsistent rows. Otherwise `409`, and the API stays closed.
+        Reopening an epoch already reopened changes nothing.
+      security:
+        - recoveryAdmin: []
+      responses:
+        '200':
+          description: The API is open again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RecoveryState'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '500':
@@ -727,6 +855,9 @@ components:
             - rate_limited
             - payload_too_large
             - invalid_signature
+            - maintenance
+            - recovery_state
+            - upstream_unavailable
         message:
           type: string
         fieldErrors:
@@ -754,7 +885,95 @@ components:
           type: boolean
           enum: [true]
 
+    ReconcileRequest:
+      type: object
+      additionalProperties: false
+      required: [purge]
+      properties:
+        purge:
+          type: boolean
+        expectedDeleted:
+          type: integer
+          minimum: 0
+          description: Required with `purge` true; the count a dry run reported.
+    Reconciliation:
+      type: object
+      additionalProperties: false
+      required: [epoch, ownersChecked, deleted, purged]
+      properties:
+        epoch:
+          type: string
+        ownersChecked:
+          type: integer
+          minimum: 0
+        deleted:
+          type: integer
+          minimum: 0
+        purged:
+          type: boolean
+    RecoveryCounts:
+      type: object
+      additionalProperties: false
+      required:
+        - owners
+        - cards
+        - categories
+        - retryRecords
+        - deletedIdentities
+        - cardsWithoutCategory
+        - invalidCards
+        - deletedIdentityRows
+      properties:
+        owners:
+          type: integer
+          minimum: 0
+        cards:
+          type: integer
+          minimum: 0
+        categories:
+          type: integer
+          minimum: 0
+        retryRecords:
+          type: integer
+          minimum: 0
+        deletedIdentities:
+          type: integer
+          minimum: 0
+        cardsWithoutCategory:
+          type: integer
+          minimum: 0
+        invalidCards:
+          type: integer
+          minimum: 0
+        deletedIdentityRows:
+          type: integer
+          minimum: 0
+    RecoveryStatus:
+      type: object
+      additionalProperties: false
+      required: [epoch, reconciledAt, purged, reopenedAt, consistent, counts]
+      properties:
+        epoch:
+          type: string
+        reconciledAt:
+          type: [integer, 'null']
+        purged:
+          type: [integer, 'null']
+        reopenedAt:
+          type: [integer, 'null']
+        consistent:
+          type: boolean
+          description: |
+            No Card lacks its Category, no version or Progress is out of
+            range, and no deleted identity holds rows.
+        counts:
+          $ref: '#/components/schemas/RecoveryCounts'
+
   securitySchemes:
+    recoveryAdmin:
+      type: http
+      scheme: bearer
+      description: The operator's `RECOVERY_ADMIN_TOKEN`, during a recovery only.
     clerkSession:
       type: http
       scheme: bearer
@@ -870,6 +1089,32 @@ components:
             $ref: '#/components/schemas/Error'
     InvalidSignature:
       description: The webhook's signature is missing, invalid or too old.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Maintenance:
+      description: |
+        A database recovery has the API closed. Nothing was read or
+        changed; send the request again later.
+      headers:
+        Retry-After:
+          description: Whole seconds to wait before trying again.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RecoveryState:
+      description: The recovery isn't in a state that allows this; nothing changed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UpstreamUnavailable:
+      description: Clerk didn't answer; nothing changed.
       content:
         application/json:
           schema:

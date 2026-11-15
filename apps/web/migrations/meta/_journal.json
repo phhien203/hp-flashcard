@@ -29,6 +29,13 @@
       "when": 1794674688477,
       "tag": "0003_deleted_identity_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794754826325,
+      "tag": "0004_recoveries",
+      "breakpoints": true
     }
   ]
 }

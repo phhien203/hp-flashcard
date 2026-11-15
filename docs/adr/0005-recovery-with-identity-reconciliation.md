@@ -15,3 +15,5 @@ Use D1 Time Travel instead of a custom scheduled-backup system initially, with r
 ## Observability
 
 Enable Cloudflare Workers logging and error monitoring using request IDs, routes, response statuses, latency, and sanitized failures. Exclude question/answer content, emails, credentials, authentication tokens, and request bodies. Logging alone is not proof that an actionable alerting or recovery workflow has been configured.
+
+See [docs/web-recovery.md](../web-recovery.md) for the runbook, and [docs/web-launch-checklist.md](../web-launch-checklist.md) for the rehearsal's status.

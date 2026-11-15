@@ -8,13 +8,14 @@ beforeAll(async () => {
 })
 afterAll(async () => worker?.dispose())
 
-test('health is public, uncached, schema-backed and contains only version identity', async () => {
+test('health is public, uncached, schema-backed and contains only version identity and maintenance', async () => {
   const response = await worker.fetch('/api/health')
   expect(response.status).toBe(200)
   expect(response.headers.get('cache-control')).toBe('private, no-store')
   const data = await response.json()
   expect(data).toEqual({
     status: 'ok',
+    maintenance: false,
     version: expect.any(String),
     commit: expect.any(String),
   })
