@@ -3,7 +3,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 
 import { MAINTENANCE_NOTICE } from '../domain/maintenance.js'
 import { Notice } from './Notice.js'
-import { isMaintenance } from './queries.js'
+import { isMaintenance } from './write-failures.js'
 
 /**
  * Whether the last answer to anything this page shows was that the API is

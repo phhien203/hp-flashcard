@@ -51,11 +51,15 @@ interface KeptEditContextValue {
   keep: (edit: KeptEdit | undefined) => void
 }
 
-const KeptEditContext = createContext<KeptEditContextValue>({
-  restored: undefined,
-  keep: () => {},
-})
+const KeptEditContext = createContext<KeptEditContextValue | null>(null)
 
+/** Provides the signed-in account's kept edit to All Cards and its dialog. */
 export const KeptEditProvider = KeptEditContext.Provider
 
-export const useKeptEdit = () => useContext(KeptEditContext)
+/** The signed-in account's kept edit, and the way to keep the open one. */
+export function useKeptEdit() {
+  const keptEdit = useContext(KeptEditContext)
+  if (!keptEdit)
+    throw new Error('useKeptEdit must be used inside a KeptEditProvider.')
+  return keptEdit
+}

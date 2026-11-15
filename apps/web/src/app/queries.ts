@@ -7,15 +7,15 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import {
-  ApiError,
-  type ApiClient,
-  type ProgressWrite,
-  type VersionedWrite,
-  type WriteResult,
+import type {
+  ApiClient,
+  ProgressWrite,
+  VersionedWrite,
+  WriteResult,
 } from '../api/client.js'
 import type { Card, CardInput, CardPatch } from '../api/types.js'
 import { useApi } from './api-context.js'
+import { isConflict, isNotFound } from './write-failures.js'
 
 /** How many Cards each request asks for: the first view and each Load More. */
 export const PAGE_SIZE = 12
@@ -26,6 +26,13 @@ export interface CardFilters {
   hideMastered: boolean
   /** The Shuffle seed, or `undefined` for the default order. */
   seed: number | undefined
+}
+
+/** Every visit starts here: all Categories, Mastered shown, default order. */
+export const INITIAL_FILTERS: CardFilters = {
+  categoryIds: [],
+  hideMastered: false,
+  seed: undefined,
 }
 
 export function createQueryClient() {
@@ -267,27 +274,6 @@ export function useSetProgress() {
     },
   })
 }
-
-/** Whether a failed write found no such Card: it was already deleted. */
-export const isNotFound = (error: unknown) =>
-  error instanceof ApiError && error.status === 404
-
-/** Whether a write was refused by the write rate limit (`429`). */
-export const isRateLimited = (error: unknown): error is ApiError =>
-  error instanceof ApiError && error.status === 429
-
-/**
- * Whether a request was refused because a database recovery has the API
- * closed (`503`): nothing was read or written.
- */
-export const isMaintenance = (error: unknown): error is ApiError =>
-  error instanceof ApiError &&
-  error.status === 503 &&
-  error.body?.code === 'maintenance'
-
-/** Whether a failed write found the Card changed since its version. */
-export const isConflict = (error: unknown) =>
-  error instanceof ApiError && error.body?.code === 'version_conflict'
 
 /**
  * Deletes a Card, if it is still at the version the deletion was based on.

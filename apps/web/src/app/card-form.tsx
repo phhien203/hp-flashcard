@@ -5,18 +5,11 @@ import {
   Input,
   Textarea,
 } from '@hp-flashcard/ui'
-
 import { useState } from 'react'
 
-import { ApiError } from '../api/client.js'
-import { maintenanceWriteMessage } from '../domain/maintenance.js'
-import { rateLimitedMessage } from '../domain/rate-limit.js'
 import type { Card, CardInput } from '../api/types.js'
-import {
-  BLANK_MESSAGES,
-  CARD_QUOTA,
-  checkCardText,
-} from '../domain/card-text.js'
+import { checkCardText } from '../domain/card-text.js'
+import { cardSaveFailure } from './write-failures.js'
 
 /** What the user has typed into a Card form, untrimmed. */
 export interface CardDraft {
@@ -60,75 +53,6 @@ export function checkDraft(
     ? { ok: true, input: checked.value }
     : { ok: false, errors: checked.errors }
 }
-
-/** How a failed save is explained: beside fields, or for the whole form. */
-export function saveErrorOf(error: unknown): {
-  fieldErrors: DraftErrors
-  message: string | undefined
-} {
-  if (error instanceof ApiError) {
-    if (error.status === 400 && error.body?.fieldErrors) {
-      const fieldErrors: DraftErrors = {}
-      let other = false
-      for (const [field, message] of Object.entries(error.body.fieldErrors)) {
-        if (field in BLANK_MESSAGES) fieldErrors[field as CardField] = message
-        else other = true
-      }
-      if (Object.keys(fieldErrors).length > 0 && !other) {
-        return { fieldErrors, message: undefined }
-      }
-    }
-    if (error.status === 404) {
-      return {
-        fieldErrors: {},
-        message: 'This card no longer exists, so it could not be saved.',
-      }
-    }
-    if (error.status === 401) {
-      return {
-        fieldErrors: {},
-        message: 'Your session has ended. Sign in again to save your card.',
-      }
-    }
-    if (error.body?.code === 'quota_exceeded') {
-      return {
-        fieldErrors: {},
-        message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
-      }
-    }
-    if (error.status === 503 && error.body?.code === 'maintenance') {
-      return { fieldErrors: {}, message: maintenanceWriteMessage('saved') }
-    }
-    if (error.status === 429) {
-      return {
-        fieldErrors: {},
-        message: rateLimitedMessage(error.retryAfter),
-      }
-    }
-  }
-  if (isNetworkFailure(error)) {
-    return {
-      fieldErrors: {},
-      message: OFFLINE_MESSAGE,
-    }
-  }
-  return {
-    fieldErrors: {},
-    message: 'Your card could not be saved. Please try again.',
-  }
-}
-
-/** Why a write that never got an answer failed: no connection. */
-export const OFFLINE_MESSAGE =
-  'Your card could not be saved: you’re offline or the server can’t be reached. Check your connection and try again.'
-
-/**
- * Whether a write failed for want of a connection: `fetch` rejects with a
- * `TypeError` when no response arrives, and nothing is queued for later.
- */
-export const isNetworkFailure = (error: unknown) =>
-  error instanceof TypeError ||
-  (typeof navigator !== 'undefined' && navigator.onLine === false)
 
 export interface CardFieldsProps {
   draft: CardDraft
@@ -214,7 +138,7 @@ export function useCardDraft(initial: CardDraft) {
 
   /** Shows why a save failed, keeping the draft. */
   const showSaveError = (error: unknown) => {
-    const { fieldErrors, message } = saveErrorOf(error)
+    const { fieldErrors, message } = cardSaveFailure(error)
     setErrors(fieldErrors)
     setFormError(message)
   }
