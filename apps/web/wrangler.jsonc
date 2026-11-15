@@ -32,9 +32,6 @@
           "migrations_dir": "migrations",
         },
       ],
-      "secrets": {
-        "required": ["CLERK_JWT_KEY", "CLERK_WEBHOOK_SIGNING_SECRET"],
-      },
     },
   },
   "d1_databases": [
