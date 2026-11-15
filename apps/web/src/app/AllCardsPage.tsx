@@ -1,36 +1,25 @@
-import {
-  Button,
-  CardTile,
-  CategoryFilter,
-  Checkbox,
-  useToast,
-} from '@hp-flashcard/ui'
+import { Button, CardTile, useToast } from '@hp-flashcard/ui'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Card, CategoryList } from '../api/types.js'
-import { useApi } from './api-context.js'
-import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
-import { CreateCardForm } from './CreateCardForm.js'
 import { MASTERED } from '../domain/progress.js'
+import { useApi } from './api-context.js'
+import { CardFilterControls, INITIAL_FILTERS } from './CardFilterControls.js'
+import { withExistingCategories } from './category-selection.js'
+import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
 import { EditCardDialog } from './EditCardDialog.js'
 import { useKeptEdit } from './kept-edit.js'
-import { Notice } from './Notice.js'
+import { LoadFailedNotice, Notice } from './Notice.js'
 import {
   fetchCard,
-  isNotFound,
   queryKeys,
   useCardPages,
   useCategories,
   type CardFilters,
 } from './queries.js'
-
-const INITIAL_FILTERS: CardFilters = {
-  categoryIds: [],
-  hideMastered: false,
-  seed: undefined,
-}
+import { isNotFound } from './write-failures.js'
 
 export interface AllCardsPageProps {
   createShuffleSeed: () => number
@@ -175,27 +164,12 @@ export function AllCardsPage({
       />
 
       <div className="flex flex-col gap-200 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-200">
-          <CategoryFilter
-            categories={categories.data?.items ?? []}
-            value={namesOf(categories.data?.items, filters.categoryIds)}
-            onValueChange={(names) =>
-              changeFilters((f) => ({
-                ...f,
-                categoryIds: idsOf(categories.data?.items, names),
-              }))
-            }
-          />
-          <label className="flex cursor-pointer items-center gap-100 text-preset-4-medium">
-            <Checkbox
-              checked={filters.hideMastered}
-              onCheckedChange={(hideMastered) =>
-                changeFilters((f) => ({ ...f, hideMastered }))
-              }
-            />
-            Hide Mastered
-          </label>
-        </div>
+        <CardFilterControls
+          categories={categories.data?.items}
+          filters={filters}
+          // Shuffle isn't a filter: a shuffled order stays shuffled.
+          onChange={(change) => changeFilters((f) => ({ ...f, ...change }))}
+        />
         <Button
           variant="outline"
           className="self-start sm:self-auto"
@@ -208,46 +182,27 @@ export function AllCardsPage({
       </div>
 
       {categories.isError && (
-        <Notice role="alert" title="Categories could not be loaded.">
-          <Button variant="outline" onClick={() => void categories.refetch()}>
-            Retry
-          </Button>
-        </Notice>
+        <LoadFailedNotice
+          title="Categories could not be loaded."
+          onRetry={() => void categories.refetch()}
+        />
       )}
 
       {cards.isPending ? (
         <Notice role="status" title="Loading cards…" />
       ) : cards.isError && !cards.data ? (
-        <Notice role="alert" title="Cards could not be loaded.">
-          <Button
-            variant="outline"
-            disabled={cards.isFetching}
-            onClick={() => void cards.refetch()}
-          >
-            Retry
-          </Button>
-        </Notice>
+        <LoadFailedNotice
+          title="Cards could not be loaded."
+          retrying={cards.isFetching}
+          onRetry={() => void cards.refetch()}
+        />
       ) : loaded.length === 0 ? (
-        filtered ? (
-          <Notice
-            title="No cards match your filters."
-            description="Choose other Categories or show Mastered cards."
-          >
-            <Button
-              variant="outline"
-              onClick={() =>
-                changeFilters((f) => ({ ...INITIAL_FILTERS, seed: f.seed }))
-              }
-            >
-              Clear filters
-            </Button>
-          </Notice>
-        ) : (
-          <Notice
-            title="No cards yet."
-            description="Cards you create will appear here."
-          />
-        )
+        <NoCardsNotice
+          filtered={filtered}
+          onClearFilters={() =>
+            changeFilters((f) => ({ ...INITIAL_FILTERS, seed: f.seed }))
+          }
+        />
       ) : (
         <>
           <ul
@@ -286,15 +241,11 @@ export function AllCardsPage({
           </ul>
 
           {cards.isFetchNextPageError && (
-            <Notice role="alert" title="More cards could not be loaded.">
-              <Button
-                variant="outline"
-                disabled={cards.isFetchingNextPage}
-                onClick={() => void cards.fetchNextPage()}
-              >
-                Retry
-              </Button>
-            </Notice>
+            <LoadFailedNotice
+              title="More cards could not be loaded."
+              retrying={cards.isFetchingNextPage}
+              onRetry={() => void cards.fetchNextPage()}
+            />
           )}
 
           {cards.hasNextPage && !cards.isFetchNextPageError && (
@@ -357,6 +308,33 @@ export function AllCardsPage({
             : ''}
       </p>
     </main>
+  )
+}
+
+interface NoCardsNoticeProps {
+  /** Whether filters are hiding Cards, rather than there being none. */
+  filtered: boolean
+  onClearFilters: () => void
+}
+
+/** Nothing to list: the filters hide every Card, or there are none yet. */
+function NoCardsNotice({ filtered, onClearFilters }: NoCardsNoticeProps) {
+  if (!filtered)
+    return (
+      <Notice
+        title="No cards yet."
+        description="Cards you create will appear here."
+      />
+    )
+  return (
+    <Notice
+      title="No cards match your filters."
+      description="Choose other Categories or show Mastered cards."
+    >
+      <Button variant="outline" onClick={onClearFilters}>
+        Clear filters
+      </Button>
+    </Notice>
   )
 }
 

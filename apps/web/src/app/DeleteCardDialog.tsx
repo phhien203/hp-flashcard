@@ -12,20 +12,15 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import type { Card } from '../api/types.js'
-import { ApiError } from '../api/client.js'
 import { useApi } from './api-context.js'
-import { FormError, isNetworkFailure } from './card-form.js'
+import { FormError } from './card-form.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
-import { maintenanceWriteMessage } from '../domain/maintenance.js'
-import { rateLimitedMessage } from '../domain/rate-limit.js'
+import { fetchCard, useDeleteCard } from './queries.js'
 import {
-  fetchCard,
+  deleteFailureMessage,
   isConflict,
-  isMaintenance,
   isNotFound,
-  isRateLimited,
-  useDeleteCard,
-} from './queries.js'
+} from './write-failures.js'
 
 export interface DeleteCardDialogProps {
   /** The Card to delete. */
@@ -92,6 +87,33 @@ export function DeleteCardDialog({
     }
   }
 
+  /** Deletes the confirmed version; a retry repeats its key. */
+  const confirmDelete = () => {
+    if (deletion.isPending) return
+    setError(undefined)
+    const { contentVersion } = confirmed
+    deletion.mutate(
+      {
+        cardId: card.id,
+        write: {
+          contentVersion,
+          // A retry repeats the key: deleted at most once.
+          idempotencyKey: attempt.keyFor(String(contentVersion)),
+        },
+      },
+      {
+        onSuccess: () => finish('deleted'),
+        onError: (failure) => {
+          if (isNotFound(failure)) finish('missing')
+          else if (isConflict(failure)) {
+            setChanged(false)
+            void review()
+          } else setError(deleteFailureMessage(failure))
+        },
+      },
+    )
+  }
+
   return (
     <AlertDialog
       open={open}
@@ -132,43 +154,7 @@ export function DeleteCardDialog({
           <Button
             disabled={deletion.isPending}
             focusableWhenDisabled
-            onClick={() => {
-              if (deletion.isPending) return
-              setError(undefined)
-              const { contentVersion } = confirmed
-              deletion.mutate(
-                {
-                  cardId: card.id,
-                  write: {
-                    contentVersion,
-                    // A retry repeats the key: deleted at most once.
-                    idempotencyKey: attempt.keyFor(String(contentVersion)),
-                  },
-                },
-                {
-                  onSuccess: () => finish('deleted'),
-                  onError: (failure) => {
-                    if (isNotFound(failure)) finish('missing')
-                    else if (isConflict(failure)) {
-                      setChanged(false)
-                      void review()
-                    } else
-                      setError(
-                        isNetworkFailure(failure)
-                          ? 'Your card could not be deleted: you’re offline or the server can’t be reached. Check your connection and try again.'
-                          : failure instanceof ApiError &&
-                              failure.status === 401
-                            ? 'Your session has ended. Sign in again to delete your card.'
-                            : isRateLimited(failure)
-                              ? rateLimitedMessage(failure.retryAfter)
-                              : isMaintenance(failure)
-                                ? maintenanceWriteMessage('deleted')
-                                : 'Your card could not be deleted. Please try again.',
-                      )
-                  },
-                },
-              )
-            }}
+            onClick={confirmDelete}
           >
             {deletion.isPending ? 'Deleting Card…' : 'Delete Card'}
           </Button>

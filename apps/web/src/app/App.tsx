@@ -213,37 +213,51 @@ function Collection({
             </footer>
           </div>
 
-          <AlertDialog
-            open={leavingTo !== undefined}
-            onOpenChange={(open) => {
-              if (!open) setLeavingTo(undefined)
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Leave without creating the card?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  What you&rsquo;ve typed into the new card hasn&rsquo;t been
-                  saved and will be lost.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Stay</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    if (leavingTo !== undefined)
-                      window.location.hash = leavingTo
-                  }}
-                >
-                  Discard and leave
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <LeaveDraftDialog
+            leavingTo={leavingTo}
+            onStay={() => setLeavingTo(undefined)}
+          />
         </QueryClientProvider>
       </KeptEditProvider>
     </ApiProvider>
+  )
+}
+
+interface LeaveDraftDialogProps {
+  /** The page a link asked for while the create form held input. */
+  leavingTo: string | undefined
+  /** Called when the person stays, keeping their input. */
+  onStay: () => void
+}
+
+/** Asks before a link discards what was typed into the create form. */
+function LeaveDraftDialog({ leavingTo, onStay }: LeaveDraftDialogProps) {
+  return (
+    <AlertDialog
+      open={leavingTo !== undefined}
+      onOpenChange={(open) => {
+        if (!open) onStay()
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Leave without creating the card?</AlertDialogTitle>
+          <AlertDialogDescription>
+            What you&rsquo;ve typed into the new card hasn&rsquo;t been saved
+            and will be lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Stay</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (leavingTo !== undefined) window.location.hash = leavingTo
+            }}
+          >
+            Discard and leave
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

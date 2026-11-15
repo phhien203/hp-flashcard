@@ -1,28 +1,16 @@
-import {
-  Button,
-  buttonVariants,
-  CategoryFilter,
-  Checkbox,
-  Flashcard,
-} from '@hp-flashcard/ui'
+import { Button, buttonVariants, Flashcard } from '@hp-flashcard/ui'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { ApiError } from '../api/client.js'
 import type { Card } from '../api/types.js'
-import { useApi } from './api-context.js'
-import { isNetworkFailure } from './card-form.js'
-import { idsOf, namesOf, withExistingCategories } from './category-selection.js'
-import { useIdempotencyKeys } from './idempotency-keys.js'
-import { Notice } from './Notice.js'
 import { progressFingerprint } from '../domain/idempotency.js'
 import { MASTERED } from '../domain/progress.js'
-import { rateLimitedMessage } from '../domain/rate-limit.js'
+import { useApi } from './api-context.js'
+import { CardFilterControls, INITIAL_FILTERS } from './CardFilterControls.js'
+import { withExistingCategories } from './category-selection.js'
+import { useIdempotencyKeys } from './idempotency-keys.js'
+import { LoadFailedNotice, Notice } from './Notice.js'
 import {
-  isConflict,
-  isMaintenance,
-  isNotFound,
-  isRateLimited,
   PAGE_SIZE,
   studyPageOptions,
   useCardStatistics,
@@ -33,13 +21,7 @@ import {
 } from './queries.js'
 import { ROUTE_HREFS } from './router.js'
 import { StudyStatistics } from './StudyStatistics.js'
-
-/** Every visit starts here: all Categories, Mastered shown, default order. */
-const INITIAL_FILTERS: CardFilters = {
-  categoryIds: [],
-  hideMastered: false,
-  seed: undefined,
-}
+import { progressSaveFailure } from './write-failures.js'
 
 /** A Progress save, and what to do once it succeeds. */
 interface ProgressSave {
@@ -49,62 +31,6 @@ interface ProgressSave {
   progressVersion: number
   /** `score` moves on to the next Card; `reset` stays on this one. */
   kind: 'score' | 'reset'
-}
-
-/**
- * How a failed Progress save is explained, and whether sending it again
- * can help. After a conflict or a deleted Card, the screen already shows
- * the Card as it is now: the person decides again rather than retrying.
- */
-function saveFailure(error: unknown): {
-  title: string
-  description: string
-  retry: boolean
-} {
-  if (isConflict(error))
-    return {
-      title: 'This card’s progress was changed on another device.',
-      description:
-        'It now shows the latest progress. Study it again if you like.',
-      retry: false,
-    }
-  if (isNotFound(error))
-    return {
-      title: 'This card no longer exists.',
-      description: 'It was deleted on another device.',
-      retry: false,
-    }
-  if (isRateLimited(error))
-    return {
-      title: 'Your progress could not be saved.',
-      description: rateLimitedMessage(error.retryAfter),
-      retry: true,
-    }
-  if (isMaintenance(error))
-    return {
-      title: 'Your progress could not be saved.',
-      description:
-        'Flashcard is down for maintenance. The card keeps its previous progress; try again in a few minutes.',
-      retry: true,
-    }
-  if (error instanceof ApiError && error.status === 401)
-    return {
-      title: 'Your progress could not be saved.',
-      description: 'Your session has ended. Sign in again to save it.',
-      retry: false,
-    }
-  if (isNetworkFailure(error))
-    return {
-      title: 'Your progress could not be saved.',
-      description:
-        'You’re offline or the server can’t be reached. Check your connection and try again.',
-      retry: true,
-    }
-  return {
-    title: 'Your progress could not be saved.',
-    description: 'The card keeps its previous progress.',
-    retry: true,
-  }
 }
 
 export interface StudyPageProps {
@@ -201,7 +127,7 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
       },
     )
   }
-  const failure = save.isError ? saveFailure(save.error) : undefined
+  const failure = save.isError ? progressSaveFailure(save.error) : undefined
 
   const empty = cards.isSuccess && total === 0
   // Under Hide Mastered, an empty listing means no Cards only when there are
@@ -225,32 +151,14 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
         className="flex min-w-0 flex-col overflow-hidden rounded-16 border border-border bg-card text-card-foreground shadow-rest xl:col-span-2"
       >
         <div className="flex flex-wrap items-center justify-between gap-200 border-b border-border p-200 md:px-300">
-          <div className="flex flex-wrap items-center gap-200">
-            <CategoryFilter
-              categories={categories.data?.items ?? []}
-              value={namesOf(categories.data?.items, filters.categoryIds)}
-              onValueChange={(names) =>
-                changeFilters((f) => ({
-                  ...f,
-                  categoryIds: idsOf(categories.data?.items, names),
-                  seed: undefined,
-                }))
-              }
-            />
-            <label className="flex cursor-pointer items-center gap-100 text-preset-4-medium">
-              <Checkbox
-                checked={filters.hideMastered}
-                onCheckedChange={(hideMastered) =>
-                  changeFilters((f) => ({
-                    ...f,
-                    hideMastered,
-                    seed: undefined,
-                  }))
-                }
-              />
-              Hide Mastered
-            </label>
-          </div>
+          <CardFilterControls
+            categories={categories.data?.items}
+            filters={filters}
+            // Other Cards, other order: a filter change ends the Shuffle.
+            onChange={(change) =>
+              changeFilters((f) => ({ ...f, ...change, seed: undefined }))
+            }
+          />
           <Button
             variant="outline"
             disabled={total < 2 || busy}
@@ -264,52 +172,26 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
 
         {categories.isError && (
           <div className="p-200 md:px-300">
-            <Notice role="alert" title="Categories could not be loaded.">
-              <Button
-                variant="outline"
-                onClick={() => void categories.refetch()}
-              >
-                Retry
-              </Button>
-            </Notice>
+            <LoadFailedNotice
+              title="Categories could not be loaded."
+              onRetry={() => void categories.refetch()}
+            />
           </div>
         )}
 
         {cards.isError && !card ? (
           <div className="p-200 md:p-300">
-            <Notice role="alert" title="Cards could not be loaded.">
-              <Button
-                variant="outline"
-                disabled={cards.isFetching}
-                onClick={() => void cards.refetch()}
-              >
-                Retry
-              </Button>
-            </Notice>
+            <LoadFailedNotice
+              title="Cards could not be loaded."
+              retrying={cards.isFetching}
+              onRetry={() => void cards.refetch()}
+            />
           </div>
         ) : empty ? (
-          noCards ? (
-            <EmptyState
-              title="No cards to study"
-              description="You don’t have any cards yet. Add your first card in the All Cards tab."
-            >
-              <a
-                href={ROUTE_HREFS['all-cards']}
-                className={buttonVariants({ variant: 'primary' })}
-              >
-                Go to All Cards
-              </a>
-            </EmptyState>
-          ) : (
-            <EmptyState
-              title="You’re all caught up!"
-              description={
-                filters.categoryIds.length > 0
-                  ? 'All cards in the selected categories are mastered. Turn off “Hide Mastered” to study them again.'
-                  : 'All your cards are mastered. Turn off “Hide Mastered” to study them again.'
-              }
-            />
-          )
+          <NothingToStudy
+            noCards={noCards}
+            categoriesChosen={filters.categoryIds.length > 0}
+          />
         ) : !card ? (
           <div className="p-200 md:p-300">
             <Notice role="status" title="Loading cards…" />
@@ -407,15 +289,48 @@ export function StudyPage({ createShuffleSeed }: StudyPageProps) {
   )
 }
 
-function EmptyState({
-  title,
-  description,
-  children,
-}: {
+interface NothingToStudyProps {
+  /** No Cards at all, rather than every matching Card Mastered and hidden. */
+  noCards: boolean
+  /** Whether the person narrowed the Cards to some Categories. */
+  categoriesChosen: boolean
+}
+
+/** Why there is no Card to show, and the way on. */
+function NothingToStudy({ noCards, categoriesChosen }: NothingToStudyProps) {
+  if (noCards)
+    return (
+      <EmptyState
+        title="No cards to study"
+        description="You don’t have any cards yet. Add your first card in the All Cards tab."
+      >
+        <a
+          href={ROUTE_HREFS['all-cards']}
+          className={buttonVariants({ variant: 'primary' })}
+        >
+          Go to All Cards
+        </a>
+      </EmptyState>
+    )
+  return (
+    <EmptyState
+      title="You’re all caught up!"
+      description={
+        categoriesChosen
+          ? 'All cards in the selected categories are mastered. Turn off “Hide Mastered” to study them again.'
+          : 'All your cards are mastered. Turn off “Hide Mastered” to study them again.'
+      }
+    />
+  )
+}
+
+interface EmptyStateProps {
   title: string
   description: string
   children?: ReactNode
-}) {
+}
+
+function EmptyState({ title, description, children }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center gap-300 px-300 py-1000 text-center">
       <div className="flex flex-col gap-100">

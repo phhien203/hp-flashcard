@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@hp-flashcard/ui'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 
 import type { Card } from '../api/types.js'
 import { useApi } from './api-context.js'
@@ -28,7 +28,8 @@ import {
 } from './card-form.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
 import { useKeptEdit, type KeptEdit } from './kept-edit.js'
-import { fetchCard, isConflict, isNotFound, useUpdateCard } from './queries.js'
+import { fetchCard, useUpdateCard } from './queries.js'
+import { isConflict, isNotFound } from './write-failures.js'
 
 export interface EditCardDialogProps {
   /** The Card being edited, as it was when the dialog opened. */
@@ -125,6 +126,41 @@ export function EditCardDialog({
     else form.replace(draftOf(latest))
   }
 
+  /** Saves the edit over the version it is based on. */
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (update.isPending || conflict) return
+    const input = form.check()
+    if (!input) return
+    setNote(undefined)
+    const { contentVersion } = base
+    update.mutate(
+      {
+        cardId: base.id,
+        patch: input,
+        write: {
+          contentVersion,
+          // A retry of the same change to the same version repeats its
+          // key, so the backend applies it at most once.
+          idempotencyKey: attempt.keyFor(
+            JSON.stringify([contentVersion, input]),
+          ),
+        },
+      },
+      {
+        onSuccess: ({ value: saved }) => {
+          attempt.done()
+          setOpen(false)
+          onSaved(saved)
+        },
+        onError: (error) => {
+          if (isConflict(error)) void review()
+          else form.showSaveError(error)
+        },
+      },
+    )
+  }
+
   return (
     <Dialog
       open={open}
@@ -142,43 +178,7 @@ export function EditCardDialog({
         <DialogHeader>
           <DialogTitle>Edit your card</DialogTitle>
         </DialogHeader>
-        <form
-          noValidate
-          className="flex flex-col gap-250"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (update.isPending || conflict) return
-            const input = form.check()
-            if (!input) return
-            setNote(undefined)
-            const { contentVersion } = base
-            update.mutate(
-              {
-                cardId: base.id,
-                patch: input,
-                write: {
-                  contentVersion,
-                  // A retry of the same change to the same version repeats
-                  // its key, so the backend applies it at most once.
-                  idempotencyKey: attempt.keyFor(
-                    JSON.stringify([contentVersion, input]),
-                  ),
-                },
-              },
-              {
-                onSuccess: ({ value: saved }) => {
-                  attempt.done()
-                  setOpen(false)
-                  onSaved(saved)
-                },
-                onError: (error) => {
-                  if (isConflict(error)) void review()
-                  else form.showSaveError(error)
-                },
-              },
-            )
-          }}
-        >
+        <form noValidate className="flex flex-col gap-250" onSubmit={submit}>
           <CardFields
             draft={form.draft}
             errors={form.errors}

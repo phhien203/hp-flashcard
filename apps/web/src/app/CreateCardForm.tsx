@@ -1,5 +1,5 @@
 import { Button } from '@hp-flashcard/ui'
-import { useEffect, useId } from 'react'
+import { useEffect, useId, type FormEvent } from 'react'
 
 import type { Card } from '../api/types.js'
 import {
@@ -38,6 +38,28 @@ export function CreateCardForm({
   }, [hasDraft, onHasDraftChange])
   useEffect(() => () => onHasDraftChange(false), [onHasDraftChange])
 
+  /** Creates the Card, keeping the draft until the backend has saved it. */
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (create.isPending) return
+    const input = form.check()
+    if (!input) return
+    // A retry of the same Card repeats its key, so the backend creates it
+    // at most once.
+    const idempotencyKey = attempt.keyFor(JSON.stringify(input))
+    create.mutate(
+      { input, idempotencyKey },
+      {
+        onSuccess: ({ value: card }) => {
+          attempt.done()
+          form.reset()
+          onCreated(card)
+        },
+        onError: form.showSaveError,
+      },
+    )
+  }
+
   return (
     <div className="rounded-16 border border-border bg-card p-200 text-card-foreground shadow-rest md:p-300">
       <h2 id={headingId} className="sr-only">
@@ -47,26 +69,7 @@ export function CreateCardForm({
         aria-labelledby={headingId}
         noValidate
         className="flex flex-col gap-200"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (create.isPending) return
-          const input = form.check()
-          if (!input) return
-          // A retry of the same Card repeats its key, so the backend
-          // creates it at most once.
-          const idempotencyKey = attempt.keyFor(JSON.stringify(input))
-          create.mutate(
-            { input, idempotencyKey },
-            {
-              onSuccess: ({ value: card }) => {
-                attempt.done()
-                form.reset()
-                onCreated(card)
-              },
-              onError: form.showSaveError,
-            },
-          )
-        }}
+        onSubmit={submit}
       >
         <CardFields
           draft={form.draft}
