@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import { Hono, type Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 
@@ -61,10 +61,7 @@ async function isReopened(db: Database, epoch: string) {
  * (mid-restore) keeps it closed.
  */
 export const maintenanceGate = createMiddleware<AppEnv>(async (c, next) => {
-  const epoch = c.env.RECOVERY_EPOCH?.trim()
-  if (!epoch) return next()
-  const open = await isReopened(database(c.env.DB), epoch).catch(() => false)
-  if (!open) return underMaintenance(c)
+  if (await isUnderMaintenance(c.env)) return underMaintenance(c)
   await next()
 })
 
@@ -126,6 +123,23 @@ export class ClerkUnavailable extends Error {
   }
 }
 
+/**
+ * Every table keyed by owner: one list, so reconciling and inspecting
+ * can't disagree about where an identity's rows live.
+ */
+const OWNER_TABLES = [
+  'cards',
+  'categories',
+  'idempotency_records',
+  'write_requests',
+] as const
+
+/** Each owner's `owner_id` from every owner-keyed table, joined by `union`. */
+const ownerIds = (union: 'UNION' | 'UNION ALL') =>
+  OWNER_TABLES.map((table) => `SELECT owner_id FROM ${table}`).join(
+    ` ${union} `,
+  )
+
 /** Every owner with anything in D1, and those already recorded as deleted. */
 async function owners(d1: D1Database) {
   const { results } = await d1
@@ -133,10 +147,7 @@ async function owners(d1: D1Database) {
       `SELECT owner_id AS ownerId,
               EXISTS (SELECT 1 FROM deleted_identities d
                       WHERE d.owner_id = o.owner_id) AS tombstoned
-       FROM (SELECT owner_id FROM cards
-             UNION SELECT owner_id FROM categories
-             UNION SELECT owner_id FROM idempotency_records
-             UNION SELECT owner_id FROM write_requests) o
+       FROM (${ownerIds('UNION')}) o
        ORDER BY owner_id`,
     )
     .all<{ ownerId: string; tombstoned: number }>()
@@ -152,10 +163,7 @@ async function inspect(d1: D1Database): Promise<Schemas['RecoveryCounts']> {
   const row = await d1
     .prepare(
       `SELECT
-         (SELECT count(*) FROM (SELECT owner_id FROM cards
-            UNION SELECT owner_id FROM categories
-            UNION SELECT owner_id FROM idempotency_records
-            UNION SELECT owner_id FROM write_requests)) AS owners,
+         (SELECT count(*) FROM (${ownerIds('UNION')})) AS owners,
          (SELECT count(*) FROM cards) AS cards,
          (SELECT count(*) FROM categories) AS categories,
          (SELECT count(*) FROM idempotency_records) AS retryRecords,
@@ -167,10 +175,7 @@ async function inspect(d1: D1Database): Promise<Schemas['RecoveryCounts']> {
          (SELECT count(*) FROM cards
             WHERE content_version < 1 OR progress_version < 1
                OR progress NOT BETWEEN 0 AND 5) AS invalidCards,
-         (SELECT count(*) FROM (SELECT owner_id FROM cards
-            UNION ALL SELECT owner_id FROM categories
-            UNION ALL SELECT owner_id FROM idempotency_records
-            UNION ALL SELECT owner_id FROM write_requests) o
+         (SELECT count(*) FROM (${ownerIds('UNION ALL')}) o
           WHERE o.owner_id IN (SELECT owner_id FROM deleted_identities))
            AS deletedIdentityRows`,
     )
@@ -362,13 +367,19 @@ export function recoveryRoutes({ now, log }: { now: () => number; log: Log }) {
       .update(recoveries)
       .set({ reopenedAt: now() })
       .where(
-        and(
-          eq(recoveries.epoch, current.epoch),
-          sql`${recoveries.reopenedAt} IS NULL`,
-        ),
+        and(eq(recoveries.epoch, current.epoch), isNull(recoveries.reopenedAt)),
+      )
+    // A restore between the checks and the update leaves nothing reopened.
+    const after = await status(c)
+    if (after.reopenedAt === null)
+      return apiError(
+        c,
+        409,
+        'recovery_state',
+        'The recovery changed while reopening. Check its status and try again.',
       )
     log('info', { event: 'recovery_reopened', requestId: c.get('requestId') })
-    return c.json<Schemas['RecoveryStatus']>(await status(c))
+    return c.json<Schemas['RecoveryStatus']>(after)
   })
 
   return routes
