@@ -6,12 +6,11 @@ import type { Card } from '../api/types.js'
 import { progressFingerprint } from '../domain/idempotency.js'
 import { MASTERED } from '../domain/progress.js'
 import { useApi } from './api-context.js'
-import { CardFilterControls } from './CardFilterControls.js'
+import { CardFilterControls, INITIAL_FILTERS } from './CardFilterControls.js'
 import { withExistingCategories } from './category-selection.js'
 import { useIdempotencyKeys } from './idempotency-keys.js'
 import { LoadFailedNotice, Notice } from './Notice.js'
 import {
-  INITIAL_FILTERS,
   PAGE_SIZE,
   studyPageOptions,
   useCardStatistics,

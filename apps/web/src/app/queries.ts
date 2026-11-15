@@ -28,13 +28,6 @@ export interface CardFilters {
   seed: number | undefined
 }
 
-/** Every visit starts here: all Categories, Mastered shown, default order. */
-export const INITIAL_FILTERS: CardFilters = {
-  categoryIds: [],
-  hideMastered: false,
-  seed: undefined,
-}
-
 export function createQueryClient() {
   return new QueryClient({
     defaultOptions: {

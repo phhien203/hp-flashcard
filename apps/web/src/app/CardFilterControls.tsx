@@ -4,6 +4,13 @@ import type { Category } from '../api/types.js'
 import { idsOf, namesOf } from './category-selection.js'
 import type { CardFilters } from './queries.js'
 
+/** Every visit starts here: all Categories, Mastered shown, default order. */
+export const INITIAL_FILTERS: CardFilters = {
+  categoryIds: [],
+  hideMastered: false,
+  seed: undefined,
+}
+
 /** What the person changed: the chosen Categories, or Hide Mastered. */
 export type FilterChange = Partial<
   Pick<CardFilters, 'categoryIds' | 'hideMastered'>

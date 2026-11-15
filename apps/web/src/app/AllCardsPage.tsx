@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Card, CategoryList } from '../api/types.js'
 import { MASTERED } from '../domain/progress.js'
 import { useApi } from './api-context.js'
-import { CardFilterControls } from './CardFilterControls.js'
+import { CardFilterControls, INITIAL_FILTERS } from './CardFilterControls.js'
 import { withExistingCategories } from './category-selection.js'
 import { CreateCardForm } from './CreateCardForm.js'
 import { DeleteCardDialog } from './DeleteCardDialog.js'
@@ -14,7 +14,6 @@ import { useKeptEdit } from './kept-edit.js'
 import { LoadFailedNotice, Notice } from './Notice.js'
 import {
   fetchCard,
-  INITIAL_FILTERS,
   queryKeys,
   useCardPages,
   useCategories,
