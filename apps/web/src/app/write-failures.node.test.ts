@@ -7,7 +7,6 @@ import { rateLimitedMessage } from '../domain/rate-limit.js'
 import {
   cardSaveFailure,
   deleteFailureMessage,
-  OFFLINE_MESSAGE,
   progressSaveFailure,
 } from './write-failures.js'
 
@@ -63,7 +62,10 @@ describe('cardSaveFailure', () => {
     ],
     [apiError(503, 'maintenance'), maintenanceWriteMessage('saved')],
     [apiError(429, 'rate_limited', {}, 7), rateLimitedMessage(7)],
-    [offline, OFFLINE_MESSAGE],
+    [
+      offline,
+      'Your card could not be saved: you’re offline or the server can’t be reached. Check your connection and try again.',
+    ],
     [unexpected, 'Your card could not be saved. Please try again.'],
   ])('explains %o for the whole form', (error, message) => {
     expect(cardSaveFailure(error)).toEqual({ fieldErrors: {}, message })
@@ -108,6 +110,10 @@ describe('progressSaveFailure', () => {
 
   it.each([
     [apiError(429, 'rate_limited', {}, 1), rateLimitedMessage(1)],
+    [
+      apiError(503, 'maintenance'),
+      'Flashcard is down for maintenance. The card keeps its previous progress; try again in a few minutes.',
+    ],
     [
       offline,
       'You’re offline or the server can’t be reached. Check your connection and try again.',

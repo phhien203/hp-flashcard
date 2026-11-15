@@ -36,7 +36,7 @@ export const isConflict = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.body?.code === 'version_conflict'
 
 /** Whether the session ended before the request (`401`). */
-export const isUnauthorized = (error: unknown): error is ApiError =>
+const isUnauthorized = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 401
 
 /**
@@ -47,9 +47,13 @@ export const isNetworkFailure = (error: unknown) =>
   error instanceof TypeError ||
   (typeof navigator !== 'undefined' && navigator.onLine === false)
 
-/** Why a write that never got an answer failed: no connection. */
-export const OFFLINE_MESSAGE =
-  'Your card could not be saved: you’re offline or the server can’t be reached. Check your connection and try again.'
+/** Why a Card write that never got an answer failed: no connection. */
+const cardUnreachableMessage = (outcome: 'saved' | 'deleted') =>
+  `Your card could not be ${outcome}: you’re offline or the server can’t be reached. Check your connection and try again.`
+
+/** Why a write was refused: the session ended. `action` is what to retry. */
+const sessionEndedMessage = (action: string) =>
+  `Your session has ended. Sign in again to ${action}.`
 
 const isCardField = (field: string): field is CardTextField =>
   (CARD_TEXT_FIELDS as readonly string[]).includes(field)
@@ -84,9 +88,7 @@ export function cardSaveFailure(error: unknown): CardSaveFailure {
   if (isNotFound(error))
     return formMessage('This card no longer exists, so it could not be saved.')
   if (isUnauthorized(error))
-    return formMessage(
-      'Your session has ended. Sign in again to save your card.',
-    )
+    return formMessage(sessionEndedMessage('save your card'))
   if (error instanceof ApiError && error.body?.code === 'quota_exceeded')
     return formMessage(
       `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
@@ -94,7 +96,8 @@ export function cardSaveFailure(error: unknown): CardSaveFailure {
   if (isMaintenance(error)) return formMessage(maintenanceWriteMessage('saved'))
   if (isRateLimited(error))
     return formMessage(rateLimitedMessage(error.retryAfter))
-  if (isNetworkFailure(error)) return formMessage(OFFLINE_MESSAGE)
+  if (isNetworkFailure(error))
+    return formMessage(cardUnreachableMessage('saved'))
   return formMessage('Your card could not be saved. Please try again.')
 }
 
@@ -103,10 +106,8 @@ export function cardSaveFailure(error: unknown): CardSaveFailure {
  * Card that is already gone are handled by the dialog, not explained here.
  */
 export function deleteFailureMessage(error: unknown): string {
-  if (isNetworkFailure(error))
-    return 'Your card could not be deleted: you’re offline or the server can’t be reached. Check your connection and try again.'
-  if (isUnauthorized(error))
-    return 'Your session has ended. Sign in again to delete your card.'
+  if (isNetworkFailure(error)) return cardUnreachableMessage('deleted')
+  if (isUnauthorized(error)) return sessionEndedMessage('delete your card')
   if (isRateLimited(error)) return rateLimitedMessage(error.retryAfter)
   if (isMaintenance(error)) return maintenanceWriteMessage('deleted')
   return 'Your card could not be deleted. Please try again.'
@@ -156,7 +157,7 @@ export function progressSaveFailure(error: unknown): ProgressSaveFailure {
   if (isUnauthorized(error))
     return {
       title: PROGRESS_NOT_SAVED,
-      description: 'Your session has ended. Sign in again to save it.',
+      description: sessionEndedMessage('save it'),
       retry: false,
     }
   if (isNetworkFailure(error))
