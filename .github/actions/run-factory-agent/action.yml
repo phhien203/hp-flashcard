@@ -1,0 +1,33 @@
+name: Run factory agent
+description: Run a Sandcastle entrypoint with Claude Code or subscription-authenticated Codex
+inputs:
+  entrypoint:
+    description: Sandcastle TypeScript entrypoint
+    required: true
+  gpt:
+    description: Use Codex instead of Claude Code
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Run agent
+      shell: bash
+      env:
+        ENTRYPOINT: ${{ inputs.entrypoint }}
+        USE_GPT: ${{ inputs.gpt }}
+      run: |
+        set -euo pipefail
+        if [ "$USE_GPT" = "true" ]; then
+          : "${CODEX_AUTH_JSON:?Set the CODEX_AUTH_JSON repository secret to your Codex auth.json}"
+          npm install -g @openai/codex
+          mkdir -p "$HOME/.codex"
+          # Never print credentials or include them in uploaded artifacts.
+          umask 077
+          printf '%s' "$CODEX_AUTH_JSON" > "$HOME/.codex/auth.json"
+          trap 'rm -f "$HOME/.codex/auth.json"' EXIT
+          export FACTORY_AGENT=codex
+        else
+          npm install -g @anthropic-ai/claude-code
+          export FACTORY_AGENT=claude
+        fi
+        pnpm exec tsx "$ENTRYPOINT"
