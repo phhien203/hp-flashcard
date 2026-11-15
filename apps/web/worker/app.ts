@@ -36,6 +36,11 @@ import { apiError } from './errors.js'
 import { isIdentityDeleted } from './lifecycle.js'
 import { consoleLog, type Log } from './log.js'
 import { admitWrite } from './rate-limit.js'
+import {
+  isUnderMaintenance,
+  maintenanceGate,
+  recoveryRoutes,
+} from './recovery.js'
 import { clerkWebhook } from './webhook.js'
 
 type Schemas = components['schemas']
@@ -164,17 +169,28 @@ export function createApp({
     clerkWebhook(c, { now: now(), log }),
   )
 
-  // Public operational endpoint: no identity or Collection data.
-  // Read a schema table, not merely SELECT 1, to detect a missing migration.
+  // Public operational endpoint: no identity or Collection data, only
+  // whether a recovery has the API closed. Read schema tables, not merely SELECT 1, to detect a missing migration.
   api.get('/health', async (c) => {
-    await c.env.DB.prepare('SELECT 1 FROM deleted_identities LIMIT 1').first()
+    await c.env.DB.prepare(
+      'SELECT (SELECT 1 FROM deleted_identities LIMIT 1), (SELECT 1 FROM recoveries LIMIT 1)',
+    ).first()
     return c.json({
       status: 'ok',
+      maintenance: await isUnderMaintenance(c.env),
       version: c.env.WORKER_VERSION?.id ?? 'local',
       commit: c.env.WORKER_VERSION?.tag ?? 'local',
     })
   })
 
+  // The operator's recovery endpoints, with their own token, during a
+  // recovery only. Like the webhook, they stay reachable during maintenance.
+  api.use('/recovery/*', payloadTooLarge)
+  api.route('/recovery', recoveryRoutes({ now, log }))
+
+  // During a database recovery, everything else answers 503 before any
+  // session is verified or any data is read (recovery.ts).
+  api.use('*', maintenanceGate)
   api.use('*', requireSession)
   // Writes, once authenticated: the per-account rate limit, then a bounded
   // body. A refused request reads no body and writes nothing.

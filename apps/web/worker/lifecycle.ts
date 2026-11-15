@@ -66,16 +66,7 @@ export function lifecycle(db: Database) {
           .insert(webhookDeliveries)
           .values({ id: deliveryId, type, processedAt: now })
           .onConflictDoNothing(),
-        db
-          .insert(deletedIdentities)
-          .values({ ownerId, deletedAt: now })
-          .onConflictDoNothing(),
-        db.delete(cards).where(eq(cards.ownerId, ownerId)),
-        db.delete(categories).where(eq(categories.ownerId, ownerId)),
-        db
-          .delete(idempotencyRecords)
-          .where(eq(idempotencyRecords.ownerId, ownerId)),
-        db.delete(writeRequests).where(eq(writeRequests.ownerId, ownerId)),
+        ...purgeStatements(db, ownerId, now),
       ])
       return 'purged'
     },
@@ -100,6 +91,26 @@ export function lifecycle(db: Database) {
     },
   }
 }
+
+/**
+ * The statements that record `ownerId` as deleted and delete everything it
+ * owns, for one D1 batch: the webhook's purge and a recovery's
+ * reconciliation (recovery.ts) purge alike. The tombstone comes first, so
+ * the deleted-identity triggers refuse anything written after it.
+ */
+export const purgeStatements = (db: Database, ownerId: string, now: number) =>
+  [
+    db
+      .insert(deletedIdentities)
+      .values({ ownerId, deletedAt: now })
+      .onConflictDoNothing(),
+    db.delete(cards).where(eq(cards.ownerId, ownerId)),
+    db.delete(categories).where(eq(categories.ownerId, ownerId)),
+    db
+      .delete(idempotencyRecords)
+      .where(eq(idempotencyRecords.ownerId, ownerId)),
+    db.delete(writeRequests).where(eq(writeRequests.ownerId, ownerId)),
+  ] as const
 
 /** Forgets delivery ids older than the retention: the daily cleanup. */
 export const forgetOldDeliveries = (db: Database, now: number) =>

@@ -41,8 +41,11 @@ describe('the OpenAPI document', () => {
       'GET /api/cards/{cardId}',
       'GET /api/categories',
       'GET /api/health',
+      'GET /api/recovery',
       'PATCH /api/cards/{cardId}',
       'POST /api/cards',
+      'POST /api/recovery/reconcile',
+      'POST /api/recovery/reopen',
       'POST /api/webhooks/clerk',
       'PUT /api/cards/{cardId}/progress',
     ])

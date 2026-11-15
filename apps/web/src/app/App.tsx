@@ -30,6 +30,7 @@ import {
   KeptEditProvider,
   type EditKeeper,
 } from './kept-edit.js'
+import { MaintenanceNotice } from './MaintenanceNotice.js'
 import { Notice } from './Notice.js'
 import { createQueryClient } from './queries.js'
 import { ROUTE_HREFS, routeFromHash, useRoute } from './router.js'
@@ -192,6 +193,7 @@ function Collection({
                 }
               />
             </div>
+            <MaintenanceNotice />
             {route === 'study' ? (
               // Mounted afresh on each visit, so the filters, Shuffle and
               // position start from their initial values.

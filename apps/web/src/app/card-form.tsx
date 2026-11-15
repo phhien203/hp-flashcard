@@ -9,6 +9,7 @@ import {
 import { useState } from 'react'
 
 import { ApiError } from '../api/client.js'
+import { maintenanceWriteMessage } from '../domain/maintenance.js'
 import { rateLimitedMessage } from '../domain/rate-limit.js'
 import type { Card, CardInput } from '../api/types.js'
 import {
@@ -94,6 +95,9 @@ export function saveErrorOf(error: unknown): {
         fieldErrors: {},
         message: `You have reached the limit of ${CARD_QUOTA.toLocaleString('en-US')} cards. Delete a card to make room for a new one.`,
       }
+    }
+    if (error.status === 503 && error.body?.code === 'maintenance') {
+      return { fieldErrors: {}, message: maintenanceWriteMessage('saved') }
     }
     if (error.status === 429) {
       return {

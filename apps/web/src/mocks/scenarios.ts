@@ -7,6 +7,11 @@ import {
 } from 'msw'
 
 import type { ApiErrorBody } from '../api/types.js'
+import {
+  MAINTENANCE_MESSAGE,
+  MAINTENANCE_RETRY_AFTER_SECONDS,
+} from '../domain/maintenance.js'
+import { RETRY_AFTER_HEADER } from '../domain/rate-limit.js'
 import { notFound, rateLimited } from './handlers.js'
 import type { MockStore } from './store.js'
 
@@ -134,7 +139,38 @@ export const SCENARIOS = {
       http.put('/api/cards/:cardId/progress', once),
     ]
   },
+  /**
+   * A database recovery has the API closed: every Collection request
+   * answers `503` with `maintenance`, as the Worker does.
+   */
+  maintenance: () => [
+    http.all('/api/cards', underMaintenance),
+    http.all('/api/cards/*', underMaintenance),
+    http.all('/api/categories', underMaintenance),
+  ],
+  /**
+   * Maintenance begins after the page has loaded: reads work, every write
+   * answers `503` with `maintenance`.
+   */
+  'maintenance-writes': () => [
+    http.post('/api/cards', underMaintenance),
+    http.patch('/api/cards/:cardId', underMaintenance),
+    http.delete('/api/cards/:cardId', underMaintenance),
+    http.put('/api/cards/:cardId/progress', underMaintenance),
+  ],
 } satisfies Record<string, (store: MockStore) => AnyHandler[]>
+
+/** The backend's answer while a database recovery has it closed. */
+export const underMaintenance = () =>
+  HttpResponse.json<ApiErrorBody>(
+    { code: 'maintenance', message: MAINTENANCE_MESSAGE },
+    {
+      status: 503,
+      headers: {
+        [RETRY_AFTER_HEADER]: String(MAINTENANCE_RETRY_AFTER_SECONDS),
+      },
+    },
+  )
 
 /** What another device sets a Card's Progress to, in `progress-conflict`. */
 export const ELSEWHERE_PROGRESS = 0

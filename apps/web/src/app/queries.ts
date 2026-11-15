@@ -276,6 +276,15 @@ export const isNotFound = (error: unknown) =>
 export const isRateLimited = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 429
 
+/**
+ * Whether a request was refused because a database recovery has the API
+ * closed (`503`): nothing was read or written.
+ */
+export const isMaintenance = (error: unknown): error is ApiError =>
+  error instanceof ApiError &&
+  error.status === 503 &&
+  error.body?.code === 'maintenance'
+
 /** Whether a failed write found the Card changed since its version. */
 export const isConflict = (error: unknown) =>
   error instanceof ApiError && error.body?.code === 'version_conflict'

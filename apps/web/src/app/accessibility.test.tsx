@@ -168,6 +168,18 @@ describe('axe', () => {
     },
   )
 
+  it('finds no violations while the API is closed for maintenance', async () => {
+    worker.use(...SCENARIOS.maintenance())
+    await renderApp()
+    await expect
+      .element(page.getByText('Flashcard is down for maintenance.'))
+      .toBeVisible()
+    await expect
+      .element(page.getByText('Cards could not be loaded.'))
+      .toBeVisible()
+    await expectNoAxeViolations()
+  })
+
   it('finds no violations in the empty and error states', async () => {
     SCENARIOS.empty(mockStore)
     const empty = await renderApp()

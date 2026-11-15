@@ -19,4 +19,14 @@ export interface Env {
    * delivery is refused (and Clerk retries).
    */
   CLERK_WEBHOOK_SIGNING_SECRET?: string
+  /**
+   * Set while a database recovery is under way (docs/web-recovery.md): a
+   * new value per recovery. The API answers `503` until this epoch is
+   * reconciled and reopened. Outside D1, so restoring D1 can't clear it.
+   */
+  RECOVERY_EPOCH?: string
+  /** The operator's bearer token for `/api/recovery/*`, during a recovery. */
+  RECOVERY_ADMIN_TOKEN?: string
+  /** The Clerk Backend API's origin, for reconciliation. Tests only. */
+  CLERK_API_URL?: string
 }

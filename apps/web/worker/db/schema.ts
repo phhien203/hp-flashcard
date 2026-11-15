@@ -139,3 +139,20 @@ export const writeRequests = sqliteTable(
   },
   (t) => [index('write_requests_owner_at_idx').on(t.ownerId, t.at)],
 )
+
+/**
+ * Database recoveries (ADR 0005), by the operator's recovery epoch: the
+ * `RECOVERY_EPOCH` the Worker runs with while a recovery is under way.
+ * While that epoch has no row here with `reopened_at`, the API answers
+ * `503` (worker/recovery.ts). A D1 restore rolls this table back with
+ * everything else, so restoring can only close the API again, never open it.
+ */
+export const recoveries = sqliteTable('recoveries', {
+  epoch: text('epoch').primaryKey(),
+  /** When deleted identities were last reconciled against Clerk. */
+  reconciledAt: integer('reconciled_at').notNull(),
+  /** How many identities that reconciliation found deleted and purged. */
+  purged: integer('purged').notNull(),
+  /** When the operator reopened the API, once verified; null until then. */
+  reopenedAt: integer('reopened_at'),
+})

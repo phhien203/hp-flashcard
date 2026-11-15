@@ -236,6 +236,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the database recovery under way
+         * @description Operator only, and only while a recovery is under way: the Worker
+         *     has a `RECOVERY_EPOCH` and a `RECOVERY_ADMIN_TOKEN` (otherwise
+         *     `404`). See docs/web-recovery.md. Reports the epoch's
+         *     reconciliation and reopening, and counts of what D1 holds,
+         *     including rows a healthy database never has. No Card text or
+         *     identities.
+         */
+        get: operations["getRecovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recovery/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge identities Clerk has deleted
+         * @description Asks Clerk which owners in D1 still exist. Every owner Clerk no
+         *     longer has, and every tombstoned owner still holding rows, counts
+         *     as deleted. With `purge: false`, only counts them. With
+         *     `purge: true` and `expectedDeleted` equal to that count, purges and
+         *     tombstones them, as the `user.deleted` webhook would, and records
+         *     this epoch as reconciled, in one transaction. Any other count
+         *     answers `409` and purges nothing. If Clerk doesn't answer, `502`
+         *     and nothing changes.
+         */
+        post: operations["reconcileRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recovery/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen the API after a verified recovery
+         * @description Reopens the API, only if this epoch was reconciled in the database
+         *     as it is now (a later restore undoes that) and the database holds
+         *     no inconsistent rows. Otherwise `409`, and the API stays closed.
+         *     Reopening an epoch already reopened changes nothing.
+         */
+        post: operations["reopenRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -327,7 +402,7 @@ export interface components {
         };
         Error: {
             /** @enum {string} */
-            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "version_conflict" | "server_error" | "rate_limited" | "payload_too_large" | "invalid_signature";
+            code: "validation_failed" | "unauthorized" | "not_found" | "quota_exceeded" | "idempotency_key_reused" | "version_conflict" | "server_error" | "rate_limited" | "payload_too_large" | "invalid_signature" | "maintenance" | "recovery_state" | "upstream_unavailable";
             message: string;
             /** @description Messages keyed by body field or query parameter name. */
             fieldErrors?: {
@@ -345,6 +420,39 @@ export interface components {
         WebhookReceipt: {
             /** @enum {boolean} */
             received: true;
+        };
+        ReconcileRequest: {
+            purge: boolean;
+            /** @description Required with `purge` true; the count a dry run reported. */
+            expectedDeleted?: number;
+        };
+        Reconciliation: {
+            epoch: string;
+            ownersChecked: number;
+            deleted: number;
+            purged: boolean;
+        };
+        RecoveryCounts: {
+            owners: number;
+            cards: number;
+            categories: number;
+            retryRecords: number;
+            deletedIdentities: number;
+            cardsWithoutCategory: number;
+            invalidCards: number;
+            deletedIdentityRows: number;
+        };
+        RecoveryStatus: {
+            epoch: string;
+            reconciledAt: number | null;
+            purged: number | null;
+            reopenedAt: number | null;
+            /**
+             * @description No Card lacks its Category, no version or Progress is out of
+             *     range, and no deleted identity holds rows.
+             */
+            consistent: boolean;
+            counts: components["schemas"]["RecoveryCounts"];
         };
     };
     responses: {
@@ -442,6 +550,38 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description A database recovery has the API closed. Nothing was read or
+         *     changed; send the request again later.
+         */
+        Maintenance: {
+            headers: {
+                /** @description Whole seconds to wait before trying again. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The recovery isn't in a state that allows this; nothing changed. */
+        RecoveryState: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Clerk didn't answer; nothing changed. */
+        UpstreamUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The server failed. */
         ServerError: {
             headers: {
@@ -501,6 +641,11 @@ export interface operations {
                     "application/json": {
                         /** @constant */
                         status: "ok";
+                        /**
+                         * @description Whether a database recovery has the API closed: every
+                         *     Collection operation answers `503`.
+                         */
+                        maintenance: boolean;
                         version: string;
                         commit: string;
                     };
@@ -545,6 +690,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     createCard: {
@@ -587,6 +733,7 @@ export interface operations {
             422: components["responses"]["IdempotencyKeyReused"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     getCardStatistics: {
@@ -617,6 +764,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     getCard: {
@@ -642,6 +790,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     deleteCard: {
@@ -684,6 +833,7 @@ export interface operations {
             422: components["responses"]["IdempotencyKeyReused"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     updateCard: {
@@ -732,6 +882,7 @@ export interface operations {
             422: components["responses"]["IdempotencyKeyReused"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     setCardProgress: {
@@ -780,6 +931,7 @@ export interface operations {
             422: components["responses"]["IdempotencyKeyReused"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     listCategories: {
@@ -802,6 +954,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             500: components["responses"]["ServerError"];
+            503: components["responses"]["Maintenance"];
         };
     };
     receiveClerkWebhook: {
@@ -831,6 +984,85 @@ export interface operations {
                 };
             };
             400: components["responses"]["InvalidSignature"];
+            413: components["responses"]["PayloadTooLarge"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    getRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Where the recovery stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    reconcileRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description The deleted identities, counted or purged. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reconciliation"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RecoveryState"];
+            413: components["responses"]["PayloadTooLarge"];
+            500: components["responses"]["ServerError"];
+            502: components["responses"]["UpstreamUnavailable"];
+        };
+    };
+    reopenRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The API is open again. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RecoveryState"];
             413: components["responses"]["PayloadTooLarge"];
             500: components["responses"]["ServerError"];
         };
