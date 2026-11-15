@@ -394,22 +394,24 @@ describe('a recovery with a restore', () => {
     await point.restore()
 
     // Its session keeps writing while the operator reconciles and reopens.
-    const attempts = Array.from({ length: 12 }, (_, i) =>
-      worker
-        .fetch('/api/cards', {
-          method: 'POST',
-          headers: {
-            ...gone.account.auth(),
-            'Content-Type': 'application/json',
-            [IDEMPOTENCY_KEY_HEADER]: newKey(),
-          },
-          body: JSON.stringify(card(`racing ${i}`, `Racing ${i}`)),
-        })
-        .then(async (response) => {
-          await response.body?.cancel()
-          return response.status
-        }),
-    )
+    const race = (label: string) =>
+      Array.from({ length: 12 }, (_, i) =>
+        worker
+          .fetch('/api/cards', {
+            method: 'POST',
+            headers: {
+              ...gone.account.auth(),
+              'Content-Type': 'application/json',
+              [IDEMPOTENCY_KEY_HEADER]: newKey(),
+            },
+            body: JSON.stringify(card(`${label} ${i}`, `${label} ${i}`)),
+          })
+          .then(async (response) => {
+            await response.body?.cancel()
+            return response.status
+          }),
+      )
+    const attempts = race('racing')
     const { deleted } = (await reconcile({ purge: false })) as {
       deleted: number
     }
@@ -418,6 +420,9 @@ describe('a recovery with a restore', () => {
 
     for (const status of await Promise.all(attempts))
       expect([401, 503]).toContain(status)
+    // Once open, concurrent attempts all meet the tombstone, never the gate.
+    for (const status of await Promise.all(race('reopened')))
+      expect(status).toBe(401)
     await gone.account.create(card('after'), { status: 401 })
     expect(await rowsOwnedBy(gone.account.userId)).toBe(0)
   })
