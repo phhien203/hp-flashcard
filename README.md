@@ -49,5 +49,6 @@ Choose browsers with `VITEST_BROWSERS`, e.g. `VITEST_BROWSERS=firefox pnpm test`
 ## Contributing
 
 - Conventions for humans and agents are in [AGENTS.md](AGENTS.md).
+- React architecture, state, component, and testing standards are in [CODING_STANDARDS.md](CODING_STANDARDS.md), adapted from _The Conscious React_ (2026).
 - The pre-commit hook lints and formats staged files. The pre-push hook runs `typecheck`.
 - PRs that change `@hp-flashcard/ui` need a changeset (`pnpm changeset`).
